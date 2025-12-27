@@ -13,7 +13,7 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
-        /* Notion-like Sidebar Styles */
+        /* Sidebar & Layout */
         .sidebar-item { 
             @apply flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer text-slate-500 hover:bg-gray-200/60 hover:text-slate-900 transition-colors duration-200 text-sm font-medium select-none; 
         }
@@ -24,7 +24,7 @@
             @apply text-xs font-semibold text-slate-400 px-3 mt-6 mb-1 select-none;
         }
 
-        /* Note List Styles */
+        /* Note List */
         .note-item { 
             @apply p-3 rounded-lg cursor-pointer border border-transparent hover:bg-gray-100 transition duration-150 mb-1; 
         }
@@ -37,7 +37,7 @@
         .custom-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
         .custom-scroll:hover::-webkit-scrollbar-thumb { background: #cbd5e1; }
 
-        /* Editor Typography */
+        /* Editor */
         .editor-title { @apply text-4xl font-bold text-slate-800 outline-none mb-6 placeholder-gray-200 bg-transparent w-full; }
         .editor-content { @apply flex-1 w-full outline-none resize-none text-slate-600 leading-relaxed bg-transparent font-mono text-sm; }
         
@@ -57,10 +57,14 @@
                     <p class="text-slate-400 text-sm mt-1">极简、安全、流畅的云笔记</p>
                 </div>
                 <div class="space-y-4">
-                    <input v-model="authForm.username" placeholder="用户名" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-slate-400 focus:ring-0 transition">
-                    <input v-model="authForm.password" type="password" placeholder="密码" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-slate-400 focus:ring-0 transition">
+                    <input v-model="authForm.username" @keyup.enter="handleAuth" placeholder="用户名" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-slate-400 focus:ring-0 transition">
+                    <input v-model="authForm.password" @keyup.enter="handleAuth" type="password" placeholder="密码" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-slate-400 focus:ring-0 transition">
                     <input v-if="mode==='register'" v-model="authForm.inviteCode" placeholder="邀请码" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-slate-400">
-                    <button @click="handleAuth" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl text-sm font-bold transition shadow-lg shadow-slate-200 transform active:scale-95">{{ mode==='login'?'进入工作区':'立即注册' }}</button>
+                    
+                    <button @click="handleAuth" :disabled="authLoading" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl text-sm font-bold transition shadow-lg shadow-slate-200 transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        {{ authLoading ? '处理中...' : (mode==='login'?'进入工作区':'立即注册') }}
+                    </button>
+                    
                     <div class="text-center text-xs text-slate-400 cursor-pointer mt-2 hover:text-slate-600 underline decoration-dotted" @click="mode = mode==='login'?'register':'login'">
                         {{ mode==='login'?'没有账号？创建新账号':'已有账号？返回登录' }}
                     </div>
@@ -131,7 +135,8 @@
                 </div>
             </aside>
 
-            <div class="w-64 flex-shrink-0 border-r border-gray-200 flex flex-col bg-[#FCFBF9]"> <div class="h-12 flex items-center px-4 border-b border-gray-100 justify-between shrink-0 bg-white/50 backdrop-blur">
+            <div class="w-64 flex-shrink-0 border-r border-gray-200 flex flex-col bg-[#FCFBF9]"> 
+                <div class="h-12 flex items-center px-4 border-b border-gray-100 justify-between shrink-0 bg-white/50 backdrop-blur">
                     <span class="font-semibold text-sm text-slate-600 flex items-center gap-2">
                         <button v-if="!sidebarOpen" @click="sidebarOpen=true"><i class="ph ph-list"></i></button>
                         {{ getViewTitle() }}
@@ -183,13 +188,10 @@
                     
                     <div v-if="hasActiveNote && currentView !== 'trash'" class="flex items-center gap-3">
                          <span class="text-[10px] uppercase tracking-wider text-slate-300 font-bold transition-opacity duration-500" :class="saveStatus === '已同步' ? 'opacity-50' : 'opacity-100 text-blue-500'">{{ saveStatus }}</span>
-                         
                          <div class="h-4 w-px bg-gray-200"></div>
-
                          <button @click="toggleEncryption" :class="currentNote.is_encrypted ? 'text-yellow-500 bg-yellow-50' : 'text-slate-400 hover:text-slate-600'" class="p-1.5 rounded-md transition" title="加密/解密">
                              <i :class="currentNote.is_encrypted ? 'ph-lock-key-fill' : 'ph-lock-key-open'" class="ph text-lg"></i>
                          </button>
-                         
                          <button @click="openShare(currentNote)" :class="currentNote.share_id ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:text-slate-600'" class="flex items-center gap-1 px-2 py-1.5 rounded-md transition text-xs font-medium">
                             <i class="ph ph-share-network text-lg"></i> {{ currentNote.share_id ? '已分享' : '分享' }}
                         </button>
@@ -197,7 +199,6 @@
                 </header>
 
                 <div v-if="hasActiveNote && currentView !== 'trash'" class="flex-1 flex flex-col overflow-hidden relative">
-                    
                     <div v-if="currentNote.is_encrypted && !isDecryptedSession" class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-gray-50/30">
                         <div class="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 text-center">
                             <i class="ph ph-lock-key text-5xl mb-4 text-yellow-500 block"></i>
@@ -227,7 +228,6 @@
                                 <input v-model="currentNote.title" @input="debouncedSave" placeholder="无标题" class="editor-title">
                                 <textarea id="mainEditor" v-model="currentNote.content" @input="debouncedSave" placeholder="开始记录..." class="editor-content custom-scroll"></textarea>
                             </div>
-                            
                             <div v-if="showPreview" class="hidden lg:block w-1/2 border-l border-gray-100 bg-gray-50 p-8 overflow-y-auto custom-scroll">
                                 <div class="prose prose-sm prose-slate max-w-none" v-html="previewHtml"></div>
                             </div>
@@ -290,7 +290,7 @@
 
     </div>
 
-<script>
+    <script>
         const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
         createApp({
             setup() {
@@ -305,8 +305,8 @@
                 const notes = ref([]);
                 const folders = ref([]);
                 const currentNote = ref(null);
+                const authLoading = ref(false);
                 
-                // 解密会话状态
                 const isDecryptedSession = ref(false); 
                 const saveStatus = ref('已同步');
                 
@@ -330,86 +330,77 @@
                     if(saved) { 
                         try {
                             user.value = JSON.parse(saved); 
-                            loadData(); 
+                            loadData(); // 加载数据
                         } catch(e) { logout(); }
                     }
                 });
 
                 watch(showAdminPanel, (val) => { if(val) fetchAdminUsers(); });
 
-                // ★ 修复：更稳健的 API 请求封装
+                // ★ 关键修复 1：更稳健的 API 封装
+                // 遇到 401 错误时，先弹窗提示用户，不要直接静默刷新页面，
+                // 这样你可以清楚地知道是不是 Token 过期了。
                 const api = async (url, opts={}) => {
                     const token = localStorage.getItem('baynotes_token');
                     if(!token) {
-                        console.warn("No token found, logging out...");
-                        return logout();
+                        console.warn("No token found.");
+                        logout();
+                        return { ok: false };
                     }
                     opts.headers = { ...opts.headers, 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
                     
                     try {
                         const res = await fetch(url, opts);
                         
-                        // 如果是 401 未授权，提示后退出
                         if(res.status === 401) {
-                            console.error("API returned 401 Unauthorized");
+                            console.error("API 401: Unauthorized");
+                            alert("登录会话已过期，请重新登录"); // ★ 弹窗提示
                             logout();
-                            return res; // 返回 res 防止后续 crash，但 logout 会重载
+                            return res;
                         }
                         return res;
                     } catch (e) {
                         console.error("Network Error:", e);
-                        alert("网络请求失败，请检查控制台");
+                        alert("网络连接失败，请检查网络");
                         throw e;
                     }
                 };
 
                 const loadData = async () => {
-                    // ★ 修复：分步加载，即使文件夹失败也不影响主界面
                     try {
                         const folderRes = await api('/api/folders');
-                        if(folderRes.ok) {
-                            folders.value = await folderRes.json();
-                        } else {
-                            console.warn("Failed to load folders:", await folderRes.text());
-                        }
-                    } catch(e) { console.error("Load folders error", e); }
+                        if(folderRes.ok) folders.value = await folderRes.json();
+                    } catch(e) { console.error(e); }
 
                     await fetchNotes();
                 };
 
                 const fetchNotes = async () => {
-                    if(currentView.value === 'search' && !searchQuery.value.trim()) {
-                        notes.value = []; return;
-                    }
+                    if(currentView.value === 'search' && !searchQuery.value.trim()) { notes.value = []; return; }
                     try {
                         let url = `/api/notes?type=${currentView.value}`;
                         if(currentView.value === 'folder') url += `&folderId=${currentFolderId.value}`;
                         if(currentView.value === 'search') url += `&q=${encodeURIComponent(searchQuery.value)}`;
-                        
                         const res = await api(url);
                         if(res.ok) notes.value = await res.json();
-                    } catch(e) { console.error("Fetch notes error", e); }
+                    } catch(e) { console.error(e); }
                 };
 
                 const setView = (v, id=null) => { 
-                    currentView.value=v; 
-                    currentFolderId.value=id; 
-                    currentNote.value=null;
+                    currentView.value=v; currentFolderId.value=id; currentNote.value=null;
                     if(v!=='search') searchQuery.value=''; 
                     fetchNotes(); 
                 };
 
                 const doSearch = () => { 
-                    searchQuery.value=''; 
-                    currentView.value='search'; 
-                    currentNote.value=null;
-                    notes.value = []; 
+                    searchQuery.value=''; currentView.value='search'; currentNote.value=null; notes.value = []; 
                     nextTick(() => { if(searchInputRef.value) searchInputRef.value.focus(); });
                 };
 
-                // ★ 修复：登录逻辑增强，防止无反应
+                // ★ 关键修复 2：登录逻辑优化
                 const handleAuth = async () => {
                     if(!authForm.value.username || !authForm.value.password) return alert("请输入账号密码");
+                    authLoading.value = true;
                     
                     try {
                         const res = await fetch('/api/auth', { 
@@ -418,13 +409,8 @@
                             body: JSON.stringify({action:mode.value, ...authForm.value})
                         });
                         
-                        // 先尝试解析 JSON
-                        let data;
-                        try {
-                            data = await res.json();
-                        } catch(jsonErr) {
-                            throw new Error("服务器返回了非 JSON 格式数据 (可能是 500 错误)");
-                        }
+                        let data = {};
+                        try { data = await res.json(); } catch(e){}
 
                         if(!res.ok) throw new Error(data.error || '请求失败');
                         
@@ -432,31 +418,34 @@
                             alert("注册成功，请登录"); 
                             mode.value='login'; 
                         } else { 
-                            console.log("Login success:", data.user);
-                            // 1. 先存 Token
+                            // 登录成功
                             localStorage.setItem('baynotes_token', data.token); 
                             localStorage.setItem('baynotes_user', JSON.stringify(data.user)); 
                             
-                            // 2. 立即更新 UI，让用户看到界面
+                            // 立即设置 user，利用 Vue 响应式隐藏登录框
                             user.value = data.user; 
                             
-                            // 3. 稍后加载数据，避免数据加载错误阻塞 UI
-                            setTimeout(() => loadData(), 100);
+                            // 使用 nextTick 确保 DOM 更新后再加载数据
+                            await nextTick();
+                            loadData();
                         }
                     } catch(e) { 
-                        alert("登录错误: " + e.message);
-                        console.error(e);
+                        alert("操作失败: " + e.message);
+                    } finally {
+                        authLoading.value = false;
                     }
                 };
 
+                // ★ 关键修复 3：Logout 不再刷新页面，防止闪退循环
                 const logout = () => { 
-                    // 如果正在调试，可以将 location.reload() 注释掉，查看控制台报错
-                    localStorage.clear(); 
-                    user.value=null; 
-                    location.reload(); 
+                    localStorage.removeItem('baynotes_token');
+                    localStorage.removeItem('baynotes_user');
+                    user.value = null; // 仅仅重置状态，显示登录框
+                    notes.value = [];  // 清空数据
+                    // location.reload(); // ★ 已注释，防止无限刷新
                 };
 
-                // ... 其他辅助函数保持不变 ...
+                // 辅助函数保持不变
                 const getViewTitle = () => {
                     if(currentView.value === 'all') return '全部笔记';
                     if(currentView.value === 'trash') return '回收站';
@@ -489,9 +478,7 @@
                             currentNotePwd.value = '';
                             saveNote();
                         }
-                    } else {
-                        pwdModal.value = { show: true, mode: 'encrypt', input: '' };
-                    }
+                    } else { pwdModal.value = { show: true, mode: 'encrypt', input: '' }; }
                 };
 
                 const promptDecrypt = () => { pwdModal.value = { show: true, mode: 'decrypt', input: '' }; };
@@ -586,7 +573,7 @@
                 return {
                     sidebarOpen, currentView, currentFolderId, searchQuery, showPreview, searchInputRef,
                     user, notes, folders, rootFolders, getSubFolders, 
-                    currentNote, hasActiveNote, isDecryptedSession, saveStatus, trashCount,
+                    currentNote, hasActiveNote, isDecryptedSession, saveStatus, trashCount, authLoading,
                     mode, authForm, pwdModal, showAdminPanel, adminUsers, shareModal, previewHtml,
                     setView, doSearch, getViewTitle, getFolderName, formatDate, selectNote, toggleEncryption, promptDecrypt, handlePwdSubmit, debouncedSave, initNewNote, insertFormat, createFolder, deleteFolder, deleteNote, restoreNote, openShare, doShare, handleAuth, logout, resetPwd, delUser, fetchAdminUsers
                 };
@@ -595,4 +582,3 @@
     </script>
 </body>
 </html>
-
