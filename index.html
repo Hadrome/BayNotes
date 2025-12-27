@@ -44,9 +44,11 @@
                         {{ authLoading ? '处理中...' : (mode==='login'?'进入工作区':'立即注册') }}
                     </button>
                     
-                    <button type="button" @click="toggleMode" class="w-full text-center text-xs text-slate-400 cursor-pointer mt-2 hover:text-slate-600 underline decoration-dotted bg-transparent border-none">
-                        {{ mode==='login'?'没有账号？创建新账号':'已有账号？返回登录' }}
-                    </button>
+                    <div class="text-center mt-3">
+                        <button type="button" @click="toggleMode" class="text-xs text-slate-400 hover:text-slate-600 underline decoration-dotted bg-transparent border-none cursor-pointer p-2 outline-none">
+                            {{ mode==='login'?'没有账号？创建新账号':'已有账号？返回登录' }}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
