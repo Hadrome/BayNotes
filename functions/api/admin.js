@@ -70,7 +70,7 @@ export async function onRequestDelete(context) {
 
     // 删除用户
     await context.env.BNBD.prepare("DELETE FROM users WHERE id = ?").bind(targetUserId).run();
-    // 级联删除该用户的数据 (可选，建议清理干净)
+    // 级联删除该用户的数据
     await context.env.BNBD.prepare("DELETE FROM notes WHERE user_id = ?").bind(targetUserId).run();
     await context.env.BNBD.prepare("DELETE FROM folders WHERE user_id = ?").bind(targetUserId).run();
 
