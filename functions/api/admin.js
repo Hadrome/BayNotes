@@ -1,8 +1,7 @@
 // functions/api/admin.js
 
-// 复用 verifyAdmin 逻辑...
+// 验证管理员身份辅助函数
 async function verifyAdmin(request, env) {
-  // ... (保持原有的验证逻辑) ...
   const authHeader = request.headers.get('Authorization');
   if (!authHeader) return null;
   try {
@@ -10,11 +9,13 @@ async function verifyAdmin(request, env) {
     const userId = atob(token).split(':')[0];
     const user = await env.BNBD.prepare("SELECT id, username, role FROM users WHERE id = ?").bind(userId).first();
     if (!user) return null;
+    // 允许 role='admin' 或 环境变量设置的超级用户
     if (user.role === 'admin' || (env.SUPER_USER && user.username === env.SUPER_USER)) return userId;
     return null;
   } catch (e) { return null; }
 }
 
+// 密码哈希辅助函数
 async function hashPassword(password, salt) {
     const enc = new TextEncoder();
     const msgBuffer = enc.encode(password + salt);
@@ -26,15 +27,11 @@ export async function onRequestGet(context) {
   const adminId = await verifyAdmin(context.request, context.env);
   if (!adminId) return Response.json({ error: "无权访问" }, { status: 403 });
 
-  const { results } = await context.env.BNBD.prepare(`
-    SELECT users.id, users.username, users.role, users.permissions, users.created_at, COUNT(notes.id) as note_count 
-    FROM users LEFT JOIN notes ON users.id = notes.user_id 
-    GROUP BY users.id ORDER BY users.created_at DESC
-  `).all();
+  // 获取所有用户列表
+  const { results } = await context.env.BNBD.prepare("SELECT id, username, role, permissions, created_at FROM users ORDER BY created_at DESC").all();
   return Response.json(results);
 }
 
-// POST: 修改用户配置 (权限、重置密码)
 export async function onRequestPost(context) {
     const adminId = await verifyAdmin(context.request, context.env);
     if (!adminId) return Response.json({ error: "无权访问" }, { status: 403 });
@@ -42,28 +39,40 @@ export async function onRequestPost(context) {
     const body = await context.request.json();
     const { targetUserId, action, newPermissions, newPassword } = body;
 
+    // ★★★ 实现权限更新逻辑 ★★★
     if (action === 'update_permissions') {
-        // newPermissions 应该是逗号分隔的字符串 "edit,delete"
-        await context.env.BNBD.prepare("UPDATE users SET permissions = ? WHERE id = ?").bind(newPermissions, targetUserId).run();
+        // newPermissions 格式如 "edit,delete,share"
+        await context.env.BNBD.prepare("UPDATE users SET permissions = ? WHERE id = ?")
+            .bind(newPermissions, targetUserId).run();
     } 
+    // ★★★ 实现密码重置逻辑 ★★★
     else if (action === 'reset_password') {
-        // 重置密码逻辑
-        const salt = crypto.randomUUID(); // 这里需要简单的uuid生成，如果没有uuid库，可以用 random string
+        const salt = crypto.randomUUID();
         const hash = await hashPassword(newPassword, salt);
-        await context.env.BNBD.prepare("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?").bind(hash, salt, targetUserId).run();
+        await context.env.BNBD.prepare("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?")
+            .bind(hash, salt, targetUserId).run();
+    }
+    else {
+        return Response.json({ error: "无效的操作类型" }, { status: 400 });
     }
 
     return Response.json({ success: true });
 }
 
 export async function onRequestDelete(context) {
-    // ... (保持原有的删除用户逻辑) ...
     const adminId = await verifyAdmin(context.request, context.env);
     if (!adminId) return Response.json({ error: "无权访问" }, { status: 403 });
+
     const url = new URL(context.request.url);
     const targetUserId = url.searchParams.get('id');
+
     if (targetUserId === adminId) return Response.json({ error: "不能删除自己" }, { status: 400 });
-    await context.env.BNBD.prepare("DELETE FROM notes WHERE user_id = ?").bind(targetUserId).run();
+
+    // 删除用户
     await context.env.BNBD.prepare("DELETE FROM users WHERE id = ?").bind(targetUserId).run();
+    // 级联删除该用户的数据 (可选，建议清理干净)
+    await context.env.BNBD.prepare("DELETE FROM notes WHERE user_id = ?").bind(targetUserId).run();
+    await context.env.BNBD.prepare("DELETE FROM folders WHERE user_id = ?").bind(targetUserId).run();
+
     return Response.json({ success: true });
 }
