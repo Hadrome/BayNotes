@@ -3,57 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BayNotes 共享笔记</title>
+    <title>BayNotes Shared</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
-        .prose h1 { font-size: 1.8em; font-weight: 800; margin-bottom: 0.5em; }
-        .prose p { margin-bottom: 1em; line-height: 1.7; color: #334155; }
-        .prose ul, .prose ol { padding-left: 1.5em; margin-bottom: 1em; }
-        .prose ul { list-style: disc; }
-        .prose pre { background: #1e293b; color: white; padding: 1em; border-radius: 0.5em; overflow-x: auto; }
-        .prose blockquote { border-left: 4px solid #cbd5e1; padding-left: 1em; color: #64748b; font-style: italic; }
-        .prose img { border-radius: 0.5em; max-width: 100%; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .prose { max-width: 65ch; margin: 0 auto; color: #374151; line-height: 1.75; }
+        .prose h1 { font-size: 2em; font-weight: 700; margin-bottom: 0.5em; color: #111827; }
         .prose a { color: #2563eb; text-decoration: underline; }
+        .prose blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; font-style: italic; color: #6b7280; }
+        .prose pre { background: #1f2937; color: white; padding: 1em; border-radius: 0.5em; overflow-x: auto; }
     </style>
 </head>
-<body class="bg-[#F5F5F7] min-h-screen flex items-center justify-center p-4">
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
 
-    <div id="app" class="w-full max-w-3xl bg-white rounded-3xl shadow-xl overflow-hidden min-h-[50vh] flex flex-col relative">
+    <div id="app" class="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden min-h-[60vh] flex flex-col relative border border-gray-100">
         
-        <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-white z-10">
-            <div class="animate-pulse text-slate-400">正在加载笔记...</div>
+        <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-white z-20">
+            <div class="animate-pulse text-slate-400 font-medium">Loading Note...</div>
         </div>
 
-        <div v-if="needPwd" class="absolute inset-0 z-20 bg-white/90 backdrop-blur flex flex-col items-center justify-center p-8 text-center">
-            <div class="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 max-w-sm w-full">
-                <div class="text-4xl mb-4">🔒</div>
-                <h3 class="text-lg font-bold mb-2">此笔记受密码保护</h3>
-                <p class="text-sm text-slate-400 mb-4">请输入访问密码以查看内容</p>
-                <input v-model="pwdInput" type="text" placeholder="访问密码" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 mb-3 text-center">
-                <button @click="fetchNote" class="w-full bg-slate-900 text-white py-2 rounded-lg font-medium">解锁</button>
-                <p v-if="error" class="text-red-500 text-xs mt-2">{{ error }}</p>
-            </div>
-        </div>
-
-        <div v-if="!loading && !needPwd && error" class="flex-1 flex flex-col items-center justify-center text-center p-8">
+        <div v-if="error" class="flex-1 flex flex-col items-center justify-center text-center p-8">
             <div class="text-4xl mb-4">😕</div>
             <h1 class="text-xl font-bold text-slate-800">无法访问</h1>
             <p class="text-slate-500 mt-2">{{ error }}</p>
         </div>
 
-        <div v-if="note" class="p-8 sm:p-12">
+        <div v-if="needSharePwd" class="absolute inset-0 z-10 bg-white/95 backdrop-blur flex flex-col items-center justify-center p-8 text-center">
+            <div class="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 max-w-sm w-full">
+                <div class="text-4xl mb-4">🔑</div>
+                <h3 class="text-lg font-bold mb-2">链接受密码保护</h3>
+                <input v-model="sharePwdInput" @keyup.enter="fetchNote" type="password" placeholder="输入分享密码" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-blue-500 mb-3 text-center">
+                <button @click="fetchNote" class="w-full bg-slate-900 text-white py-2 rounded-lg font-medium">访问</button>
+            </div>
+        </div>
+
+        <div v-if="note && note.is_encrypted && !decryptedContent" class="flex-1 flex flex-col items-center justify-center p-12 text-center bg-gray-50/50">
+            <i class="text-5xl mb-4">🔒</i>
+            <h2 class="text-xl font-bold mb-2">内容已加密</h2>
+            <p class="text-sm text-slate-400 mb-6">作者对该笔记内容进行了单独加密</p>
+            <div class="w-full max-w-xs flex gap-2">
+                <input v-model="decryptPwd" @keyup.enter="doDecrypt" type="password" placeholder="输入笔记密码" class="flex-1 border border-gray-200 rounded-lg px-3 outline-none focus:border-blue-500">
+                <button @click="doDecrypt" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">解密</button>
+            </div>
+            <p v-if="decryptError" class="text-red-500 text-xs mt-3">{{ decryptError }}</p>
+        </div>
+
+        <div v-if="note && (!note.is_encrypted || decryptedContent)" class="p-8 sm:p-12">
             <h1 class="text-3xl font-bold text-slate-900 mb-2">{{ note.title }}</h1>
-            <div class="text-sm text-slate-400 mb-8 pb-4 border-b border-gray-100 flex justify-between">
+            <div class="text-xs text-slate-400 mb-8 pb-4 border-b border-gray-100 flex justify-between uppercase tracking-wide">
                 <span>{{ formatDate(note.created_at) }}</span>
-                <span class="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-xs font-bold">BayNotes Shared</span>
+                <span class="text-blue-500 font-bold">BayNotes</span>
             </div>
-            
-            <div v-if="note.is_encrypted" class="bg-gray-50 border border-dashed border-gray-200 rounded-xl p-8 text-center">
-                <p class="text-slate-500">🔒 此内容是加密笔记，无法在公开链接中解密。</p>
-            </div>
-            
-            <div v-else class="prose prose-slate max-w-none" v-html="renderedContent"></div>
+            <div class="prose prose-slate max-w-none" v-html="renderedContent"></div>
         </div>
 
     </div>
@@ -64,40 +68,68 @@
         createApp({
             setup() {
                 const loading = ref(true);
-                const needPwd = ref(false);
                 const error = ref('');
                 const note = ref(null);
-                const pwdInput = ref('');
                 
+                // 状态
+                const needSharePwd = ref(false); // 是否需要分享链接密码
+                const sharePwdInput = ref('');
+                
+                const decryptPwd = ref('');      // 笔记内容解密密码
+                const decryptedContent = ref(null);
+                const decryptError = ref('');
+
                 const params = new URLSearchParams(window.location.search);
                 const shareId = params.get('id');
 
-                const renderedContent = computed(() => note.value ? marked.parse(note.value.content) : '');
+                const renderedContent = computed(() => {
+                    if(!note.value) return '';
+                    // 优先显示解密后的内容，否则显示原始内容(可能为空或密文，如果未加密)
+                    const content = decryptedContent.value || note.value.content;
+                    return marked.parse(content);
+                });
 
                 const fetchNote = async () => {
-                    loading.value = true;
-                    error.value = '';
+                    loading.value = true; error.value = '';
                     try {
                         let url = `/api/share?id=${shareId}`;
-                        if (pwdInput.value) url += `&pwd=${pwdInput.value}`;
+                        if (sharePwdInput.value) url += `&pwd=${sharePwdInput.value}`;
                         
                         const res = await fetch(url);
                         const data = await res.json();
                         
                         if (res.status === 403 && data.needPwd) {
-                            needPwd.value = true;
+                            needSharePwd.value = true;
                             loading.value = false;
                             return;
                         }
 
                         if (!res.ok) throw new Error(data.error || '访问失败');
                         
-                        needPwd.value = false;
+                        needSharePwd.value = false;
                         note.value = data;
+
+                        // 如果没加密，直接显示
+                        if(!data.is_encrypted) {
+                            decryptedContent.value = data.content;
+                        }
                     } catch (e) {
                         error.value = e.message;
                     } finally {
                         loading.value = false;
+                    }
+                };
+
+                const doDecrypt = () => {
+                    if(!decryptPwd.value) return;
+                    try {
+                        const bytes = CryptoJS.AES.decrypt(note.value.content, decryptPwd.value);
+                        const original = bytes.toString(CryptoJS.enc.Utf8);
+                        if(!original) throw new Error();
+                        decryptedContent.value = original;
+                        decryptError.value = '';
+                    } catch(e) {
+                        decryptError.value = '密码错误，无法解密';
                     }
                 };
 
@@ -108,7 +140,7 @@
                     fetchNote();
                 });
 
-                return { loading, needPwd, error, note, pwdInput, fetchNote, renderedContent, formatDate };
+                return { loading, error, note, needSharePwd, sharePwdInput, decryptPwd, decryptedContent, decryptError, fetchNote, doDecrypt, renderedContent, formatDate };
             }
         }).mount('#app');
     </script>
