@@ -290,7 +290,7 @@
 
     </div>
 
-    <script>
+<script>
         const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
         createApp({
             setup() {
@@ -304,18 +304,16 @@
                 const user = ref(null);
                 const notes = ref([]);
                 const folders = ref([]);
-                const currentNote = ref(null); // 初始化为 null
+                const currentNote = ref(null);
                 
-                // 修复4：不再使用 decryptedContent 存储明文，明文直接存在 currentNote.content
-                // 改为使用 isDecryptedSession 标记当前笔记在当前会话中是否已解锁
+                // 解密会话状态
                 const isDecryptedSession = ref(false); 
-                
                 const saveStatus = ref('已同步');
                 
                 const mode = ref('login');
                 const authForm = ref({ username: '', password: '', inviteCode: '' });
                 const pwdModal = ref({ show: false, mode: 'encrypt', input: '' });
-                const currentNotePwd = ref(''); // 缓存密码用于保存时的加密
+                const currentNotePwd = ref('');
                 const showAdminPanel = ref(false);
                 const adminUsers = ref([]);
                 const shareModal = ref({ show: false, noteId: null, days: 7, pwd: '', burn: false, result: '' });
@@ -324,65 +322,141 @@
                 const getSubFolders = (pid) => folders.value.filter(f => f.parent_id === pid);
                 const previewHtml = computed(() => currentNote.value ? marked.parse(currentNote.value.content || '') : '');
                 
-                // 修复2：判断是否有活跃笔记（包括 ID 存在 或 新建的未保存笔记）
                 const hasActiveNote = computed(() => currentNote.value && (currentNote.value.id || currentNote.value.isNew));
-                const trashCount = computed(() => 0); // 可以后续扩展
+                const trashCount = computed(() => 0); 
 
                 onMounted(() => {
                     const saved = localStorage.getItem('baynotes_user');
-                    if(saved) { user.value = JSON.parse(saved); loadData(); }
+                    if(saved) { 
+                        try {
+                            user.value = JSON.parse(saved); 
+                            loadData(); 
+                        } catch(e) { logout(); }
+                    }
                 });
 
                 watch(showAdminPanel, (val) => { if(val) fetchAdminUsers(); });
 
+                // ★ 修复：更稳健的 API 请求封装
                 const api = async (url, opts={}) => {
                     const token = localStorage.getItem('baynotes_token');
-                    if(!token) return logout();
+                    if(!token) {
+                        console.warn("No token found, logging out...");
+                        return logout();
+                    }
                     opts.headers = { ...opts.headers, 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-                    const res = await fetch(url, opts);
-                    if(res.status === 401) logout();
-                    return res;
+                    
+                    try {
+                        const res = await fetch(url, opts);
+                        
+                        // 如果是 401 未授权，提示后退出
+                        if(res.status === 401) {
+                            console.error("API returned 401 Unauthorized");
+                            logout();
+                            return res; // 返回 res 防止后续 crash，但 logout 会重载
+                        }
+                        return res;
+                    } catch (e) {
+                        console.error("Network Error:", e);
+                        alert("网络请求失败，请检查控制台");
+                        throw e;
+                    }
                 };
 
                 const loadData = async () => {
-                    await api('/api/folders').then(r=>r.json()).then(d=>folders.value=d);
-                    fetchNotes();
+                    // ★ 修复：分步加载，即使文件夹失败也不影响主界面
+                    try {
+                        const folderRes = await api('/api/folders');
+                        if(folderRes.ok) {
+                            folders.value = await folderRes.json();
+                        } else {
+                            console.warn("Failed to load folders:", await folderRes.text());
+                        }
+                    } catch(e) { console.error("Load folders error", e); }
+
+                    await fetchNotes();
                 };
 
                 const fetchNotes = async () => {
-                    // 修复1：搜索框空值处理，后端已配合修复，前端也做一个防抖或空判断体验更好
                     if(currentView.value === 'search' && !searchQuery.value.trim()) {
-                        notes.value = []; 
-                        return;
+                        notes.value = []; return;
                     }
-
-                    let url = `/api/notes?type=${currentView.value}`;
-                    if(currentView.value === 'folder') url += `&folderId=${currentFolderId.value}`;
-                    if(currentView.value === 'search') url += `&q=${encodeURIComponent(searchQuery.value)}`;
-                    
-                    const res = await api(url);
-                    if(res.ok) notes.value = await res.json();
+                    try {
+                        let url = `/api/notes?type=${currentView.value}`;
+                        if(currentView.value === 'folder') url += `&folderId=${currentFolderId.value}`;
+                        if(currentView.value === 'search') url += `&q=${encodeURIComponent(searchQuery.value)}`;
+                        
+                        const res = await api(url);
+                        if(res.ok) notes.value = await res.json();
+                    } catch(e) { console.error("Fetch notes error", e); }
                 };
 
                 const setView = (v, id=null) => { 
                     currentView.value=v; 
                     currentFolderId.value=id; 
-                    currentNote.value=null; // 切换视图清空编辑器
-                    if(v!=='search') searchQuery.value=''; // 非搜索视图清空搜索词
+                    currentNote.value=null;
+                    if(v!=='search') searchQuery.value=''; 
                     fetchNotes(); 
                 };
 
-                // 修复1：搜索点击逻辑，自动聚焦
                 const doSearch = () => { 
                     searchQuery.value=''; 
                     currentView.value='search'; 
                     currentNote.value=null;
-                    notes.value = []; // 清空列表等待输入
-                    nextTick(() => {
-                        if(searchInputRef.value) searchInputRef.value.focus();
-                    });
+                    notes.value = []; 
+                    nextTick(() => { if(searchInputRef.value) searchInputRef.value.focus(); });
                 };
 
+                // ★ 修复：登录逻辑增强，防止无反应
+                const handleAuth = async () => {
+                    if(!authForm.value.username || !authForm.value.password) return alert("请输入账号密码");
+                    
+                    try {
+                        const res = await fetch('/api/auth', { 
+                            method: 'POST', 
+                            headers: {'Content-Type':'application/json'}, 
+                            body: JSON.stringify({action:mode.value, ...authForm.value})
+                        });
+                        
+                        // 先尝试解析 JSON
+                        let data;
+                        try {
+                            data = await res.json();
+                        } catch(jsonErr) {
+                            throw new Error("服务器返回了非 JSON 格式数据 (可能是 500 错误)");
+                        }
+
+                        if(!res.ok) throw new Error(data.error || '请求失败');
+                        
+                        if(mode.value==='register') { 
+                            alert("注册成功，请登录"); 
+                            mode.value='login'; 
+                        } else { 
+                            console.log("Login success:", data.user);
+                            // 1. 先存 Token
+                            localStorage.setItem('baynotes_token', data.token); 
+                            localStorage.setItem('baynotes_user', JSON.stringify(data.user)); 
+                            
+                            // 2. 立即更新 UI，让用户看到界面
+                            user.value = data.user; 
+                            
+                            // 3. 稍后加载数据，避免数据加载错误阻塞 UI
+                            setTimeout(() => loadData(), 100);
+                        }
+                    } catch(e) { 
+                        alert("登录错误: " + e.message);
+                        console.error(e);
+                    }
+                };
+
+                const logout = () => { 
+                    // 如果正在调试，可以将 location.reload() 注释掉，查看控制台报错
+                    localStorage.clear(); 
+                    user.value=null; 
+                    location.reload(); 
+                };
+
+                // ... 其他辅助函数保持不变 ...
                 const getViewTitle = () => {
                     if(currentView.value === 'all') return '全部笔记';
                     if(currentView.value === 'trash') return '回收站';
@@ -394,34 +468,17 @@
                 const getFolderName = (id) => { const f = folders.value.find(x=>x.id===id); return f?f.name:'...'; };
                 const formatDate = (ts) => new Date(ts*1000).toLocaleString('zh-CN', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
 
-                // 修复2：新建笔记逻辑
                 const initNewNote = () => {
-                    // 即使没有ID，也设置一个 isNew 标记，让界面渲染
-                    currentNote.value = { 
-                        isNew: true, 
-                        title: '', 
-                        content: '', 
-                        is_encrypted: 0, 
-                        folderId: currentView.value==='folder' ? currentFolderId.value : null 
-                    };
-                    isDecryptedSession.value = true; // 新笔记默认可见
+                    currentNote.value = { isNew: true, title: '', content: '', is_encrypted: 0, folderId: currentView.value==='folder' ? currentFolderId.value : null };
+                    isDecryptedSession.value = true;
                     currentNotePwd.value = '';
-                    
-                    // 移动端/小屏自动收起侧边栏
                     if(window.innerWidth < 768) sidebarOpen.value = false;
                 };
 
-                // 修复4：笔记选择与解密核心修复
                 const selectNote = (note) => {
-                    currentNote.value = { ...note }; // 浅拷贝
+                    currentNote.value = { ...note };
                     currentNotePwd.value = ''; 
-                    
-                    if(note.is_encrypted) {
-                        isDecryptedSession.value = false; // 需要解密
-                        // 此时 currentNote.content 依然是密文，等待用户输入密码解密
-                    } else {
-                        isDecryptedSession.value = true; // 明文，直接可见
-                    }
+                    isDecryptedSession.value = !note.is_encrypted;
                 };
 
                 const toggleEncryption = () => {
@@ -437,56 +494,38 @@
                     }
                 };
 
-                const promptDecrypt = () => {
-                    pwdModal.value = { show: true, mode: 'decrypt', input: '' };
-                };
+                const promptDecrypt = () => { pwdModal.value = { show: true, mode: 'decrypt', input: '' }; };
 
                 const handlePwdSubmit = () => {
                     const pwd = pwdModal.value.input;
                     if(!pwd) return;
-
                     if(pwdModal.value.mode === 'encrypt') {
-                        // 开启加密
-                        // 关键点：这里不改变编辑器内容的明文状态，只设置 flag 和 缓存密码
-                        // 真正的加密动作在 saveNote 发送请求时进行
                         currentNote.value.is_encrypted = 1;
                         currentNotePwd.value = pwd;
-                        isDecryptedSession.value = true; // 设置当前会话已授权
+                        isDecryptedSession.value = true; 
                         saveNote(); 
                     } else {
-                        // 解密
                         try {
                             const bytes = CryptoJS.AES.decrypt(currentNote.value.content, pwd);
                             const original = bytes.toString(CryptoJS.enc.Utf8);
                             if(!original) throw new Error();
-                            
-                            // 解密成功：将 UI 模型更新为明文
                             currentNote.value.content = original;
                             currentNotePwd.value = pwd;
                             isDecryptedSession.value = true; 
-                        } catch(e) {
-                            alert("密码错误");
-                            return;
-                        }
+                        } catch(e) { alert("密码错误"); return; }
                     }
                     pwdModal.value.show = false;
                     pwdModal.value.input = '';
                 };
 
-                // 修复3：格式插入工具
                 const insertFormat = (before, after) => {
                     const textarea = document.getElementById('mainEditor');
                     if(!textarea) return;
-                    
                     const start = textarea.selectionStart;
                     const end = textarea.selectionEnd;
                     const text = currentNote.value.content || '';
-                    const selection = text.substring(start, end);
-                    
-                    const newText = text.substring(0, start) + before + selection + after + text.substring(end);
+                    const newText = text.substring(0, start) + before + text.substring(start, end) + after + text.substring(end);
                     currentNote.value.content = newText;
-                    
-                    // 恢复焦点和光标位置
                     nextTick(() => {
                         textarea.focus();
                         textarea.selectionStart = start + before.length;
@@ -504,55 +543,35 @@
 
                 const saveNote = async () => {
                     if(!currentNote.value) return;
-                    // 如果标题内容都空，且是新的，暂不保存
-                    if(!currentNote.value.title && !currentNote.value.content && currentNote.value.isNew) {
-                         saveStatus.value = '未保存'; return; 
-                    }
-
+                    if(!currentNote.value.title && !currentNote.value.content && currentNote.value.isNew) { saveStatus.value = '未保存'; return; }
                     let contentToSend = currentNote.value.content;
-
-                    // 加密发送逻辑
                     if(currentNote.value.is_encrypted) {
-                        if(!currentNotePwd.value) {
-                            saveStatus.value = '错误：密钥丢失'; return; 
-                        }
-                        // 加密后再发送，保持本地 currentNote.value.content 是明文
+                        if(!currentNotePwd.value) { saveStatus.value = '错误：密钥丢失'; return; }
                         contentToSend = CryptoJS.AES.encrypt(currentNote.value.content, currentNotePwd.value).toString();
                     }
-
                     const payload = { ...currentNote.value, content: contentToSend };
-                    
                     const res = await api('/api/notes', { method: 'POST', body: JSON.stringify(payload) });
                     if(res.ok) {
                         const data = await res.json();
-                        // 如果是新建笔记，回填 ID
                         if(currentNote.value.isNew) {
                             currentNote.value.id = data.id;
                             delete currentNote.value.isNew;
-                            // 插入到列表头部
                             notes.value.unshift(currentNote.value);
                         }
-                        
-                        // 更新左侧列表预览（注意：列表里应该存密文，或者是摘要，这里为了简单直接更新）
                         const idx = notes.value.findIndex(n=>n.id===currentNote.value.id);
                         if(idx!==-1) {
                             notes.value[idx].title = currentNote.value.title;
-                            // 列表中存储发送的内容（如果是加密的，这里存的就是密文，符合逻辑）
                             notes.value[idx].content = contentToSend; 
                             notes.value[idx].is_encrypted = currentNote.value.is_encrypted;
                         }
                         saveStatus.value = '已同步';
-                    } else {
-                        saveStatus.value = '同步失败';
-                    }
+                    } else { saveStatus.value = '同步失败'; }
                 };
                 
-                // 辅助功能
                 const createFolder = async (pid) => { const n=prompt("请输入文件夹名称"); if(n) { await api('/api/folders', {method:'POST', body:JSON.stringify({name:n, parentId:pid})}); loadData(); }};
                 const deleteFolder = async (id) => { if(confirm("确定删除文件夹及其所有内容吗?")) { await api(`/api/folders?id=${id}`, {method:'DELETE'}); loadData(); }};
                 const deleteNote = async (n) => { if(confirm("确认删除?")) { await api(`/api/notes?id=${n.id}${currentView.value==='trash'?'&type=hard':''}`, {method:'DELETE'}); fetchNotes(); if(currentNote.value && currentNote.value.id===n.id) currentNote.value=null; }};
-                const restoreNote = async (n) => { /* 简化处理 */ alert("请复制内容重建"); };
-                
+                const restoreNote = async (n) => { alert("请复制内容重建"); };
                 const openShare = (n) => { shareModal.value.noteId=n.id; shareModal.value.show=true; shareModal.value.result=''; };
                 const doShare = async () => {
                     const res = await api('/api/notes', {method:'PATCH', body:JSON.stringify({ ...shareModal.value, noteId: currentNote.value.id })});
@@ -560,17 +579,6 @@
                     shareModal.value.result = `${window.location.origin}/view.html?id=${d.shareId}`;
                     currentNote.value.share_id = d.shareId;
                 };
-
-                const handleAuth = async () => {
-                    try {
-                        const res = await fetch('/api/auth', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action:mode.value, ...authForm.value})});
-                        const data = await res.json();
-                        if(!res.ok) throw new Error(data.error);
-                        if(mode.value==='register') { alert("注册成功，请登录"); mode.value='login'; }
-                        else { user.value=data.user; localStorage.setItem('baynotes_user', JSON.stringify(data.user)); localStorage.setItem('baynotes_token', data.token); loadData(); }
-                    } catch(e) { alert(e.message); }
-                };
-                const logout = () => { localStorage.clear(); user.value=null; location.reload(); };
                 const fetchAdminUsers = async () => { const r=await api('/api/admin'); if(r.ok) adminUsers.value=await r.json(); };
                 const resetPwd = async (u) => { const p=prompt("New Pwd"); if(p) api('/api/admin', {method:'POST', body:JSON.stringify({targetUserId:u.id, action:'reset_password', newPassword:p})}); };
                 const delUser = async (u) => { if(confirm("Del?")) { await api(`/api/admin?id=${u.id}`, {method:'DELETE'}); fetchAdminUsers(); }};
@@ -587,3 +595,4 @@
     </script>
 </body>
 </html>
+
