@@ -1,196 +1,55 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BayNotes Admin</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
-    </style>
-</head>
-<body class="bg-[#F5F5F7] text-slate-800 h-screen flex flex-col overflow-hidden">
-    
-    <div id="app" class="h-full w-full flex flex-col relative">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
-        <div v-if="!user" class="absolute inset-0 z-50 flex items-center justify-center p-6 bg-[#F5F5F7]">
-            <div class="w-full max-w-sm bg-white rounded-3xl shadow-xl p-8 transform transition-all">
-                <div class="text-center mb-8">
-                    <div class="text-5xl mb-2">🌊</div>
-                    <h1 class="text-2xl font-bold text-slate-900">BayNotes</h1>
-                    <p class="text-slate-400 text-sm mt-1">企业级云笔记</p>
-                </div>
-                <div class="flex bg-gray-100 p-1 rounded-xl mb-6">
-                    <button @click="mode = 'login'; errorMsg=''" :class="{'bg-white shadow-sm text-slate-800': mode==='login', 'text-slate-400': mode!=='login'}" class="flex-1 py-2 rounded-lg text-sm font-medium transition-all">登录</button>
-                    <button @click="mode = 'register'; errorMsg=''" :class="{'bg-white shadow-sm text-slate-800': mode==='register', 'text-slate-400': mode!=='register'}" class="flex-1 py-2 rounded-lg text-sm font-medium transition-all">注册</button>
-                </div>
-                <div class="space-y-4">
-                    <div class="bg-gray-100 rounded-xl px-4 py-3 flex items-center">
-                        <i class="ph ph-user text-gray-400 text-xl mr-3"></i>
-                        <input v-model="authForm.username" type="text" placeholder="用户名" class="bg-transparent w-full outline-none">
-                    </div>
-                    <div class="bg-gray-100 rounded-xl px-4 py-3 flex items-center">
-                        <i class="ph ph-lock text-gray-400 text-xl mr-3"></i>
-                        <input v-model="authForm.password" type="password" placeholder="密码" class="bg-transparent w-full outline-none">
-                    </div>
-                    <div v-if="mode === 'register'" class="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center">
-                        <i class="ph ph-key text-blue-400 text-xl mr-3"></i>
-                        <input v-model="authForm.inviteCode" type="text" placeholder="邀请码" class="bg-transparent w-full outline-none placeholder-blue-300">
-                    </div>
-                </div>
-                <div class="mt-6">
-                    <button @click="handleAuth" :disabled="loading" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium py-3.5 rounded-xl transition flex justify-center">
-                        <span v-if="loading"><i class="ph ph-spinner animate-spin text-xl"></i></span>
-                        <span v-else>{{ mode === 'login' ? '进入系统' : '创建账户' }}</span>
-                    </button>
-                </div>
-                <p v-if="errorMsg" class="text-red-500 text-center text-sm mt-4">{{ errorMsg }}</p>
+<style>
+    .prose img { max-width: 100%; border-radius: 0.5rem; }
+    .prose pre { background: #1e293b; color: white; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+</style>
+
+<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6">
+    <div class="flex flex-col md:flex-row gap-4">
+        <div class="flex-1">
+            <input v-model="newTitle" placeholder="标题" class="w-full text-lg font-bold outline-none mb-2">
+            <textarea v-model="newContent" placeholder="Markdown 内容..." rows="4" class="w-full resize-none text-slate-600 outline-none font-mono"></textarea>
+        </div>
+        <div class="flex-1 border-t md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-4 overflow-y-auto max-h-40 prose prose-slate" v-html="previewHtml"></div>
+    </div>
+    <div class="flex justify-between items-center mt-3 pt-3 border-t">
+        <label class="flex items-center gap-2 text-sm text-slate-500 cursor-pointer">
+            <input type="checkbox" v-model="isEncrypted" class="rounded"> <i class="ph ph-lock-key"></i> 加密此笔记
+        </label>
+        <button @click="createNote" class="bg-slate-900 text-white px-6 py-2 rounded-full font-medium">保存</button>
+    </div>
+</div>
+
+<div v-if="showShareModal" class="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+        <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="ph ph-share-network"></i> 分享笔记</h3>
+        <div class="space-y-4 text-sm">
+            <div>
+                <label class="block text-slate-400 mb-1">有效期</label>
+                <select v-model="shareForm.days" class="w-full bg-slate-100 p-2.5 rounded-xl outline-none">
+                    <option :value="0">永久有效</option>
+                    <option :value="1">1 天</option>
+                    <option :value="3">3 天</option>
+                    <option :value="7">7 天</option>
+                    <option :value="30">30 天</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-slate-400 mb-1">自定义访问密码</label>
+                <input v-model="shareForm.pwd" placeholder="留空则不设密码" class="w-full bg-slate-100 p-2.5 rounded-xl outline-none">
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" v-model="shareForm.burn"> 阅后即焚 (查看一次后链接失效)
+            </label>
+            <button @click="confirmShare" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">生成分享链接</button>
+            
+            <div v-if="generatedUrl" class="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                <p class="text-[10px] text-blue-400 uppercase font-bold mb-1">链接已生成</p>
+                <p class="text-xs break-all select-all font-mono">{{ generatedUrl }}</p>
             </div>
         </div>
-
-        <template v-else>
-            <header class="glass sticky top-0 z-10 border-b border-gray-200/50 px-4 py-3 flex justify-between items-center shrink-0">
-                <div class="flex items-center gap-2">
-                    <span class="text-2xl">🌊</span>
-                    <span class="font-bold text-lg tracking-tight">BayNotes</span>
-                    <span v-if="user.role === 'admin'" class="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full font-bold">ADMIN</span>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button v-if="user.role === 'admin'" @click="showAdmin = !showAdmin; if(showAdmin) fetchAllUsers()" class="flex items-center gap-1 text-sm bg-slate-800 text-white px-3 py-1.5 rounded-full hover:bg-slate-700 transition">
-                        <i class="ph ph-users"></i>
-                        <span class="hidden sm:inline">人员管理</span>
-                    </button>
-                    <button @click="logout" class="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-gray-100 transition">
-                        <i class="ph ph-sign-out text-xl"></i>
-                    </button>
-                </div>
-            </header>
-
-            <main class="flex-1 overflow-hidden flex flex-col relative">
-                <div v-if="!showAdmin" class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full">
-                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6">
-                        <input v-model="newTitle" placeholder="标题" class="w-full text-lg font-bold outline-none mb-2 text-slate-800">
-                        <textarea v-model="newContent" placeholder="写点什么..." rows="2" class="w-full resize-none text-slate-600 outline-none"></textarea>
-                        <div class="flex justify-end mt-2 pt-2 border-t border-gray-50">
-                            <button @click="createNote" :disabled="!newTitle" class="bg-slate-900 text-white px-5 py-2 rounded-full text-sm font-medium hover:bg-slate-800 disabled:opacity-50 transition">保存</button>
-                        </div>
-                    </div>
-                    <div class="grid gap-4 sm:grid-cols-2">
-                        <div v-for="note in notes" :key="note.id" class="group bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition relative">
-                            <div class="flex justify-between items-start mb-2">
-                                <h3 class="font-bold text-slate-800 text-lg truncate pr-4">{{ note.title }}</h3>
-                                <button @click="deleteNote(note.id)" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition"><i class="ph ph-trash text-lg"></i></button>
-                            </div>
-                            <p class="text-slate-500 text-sm line-clamp-4 whitespace-pre-wrap">{{ note.content }}</p>
-                            <div class="mt-4 pt-3 border-t border-gray-50 text-xs text-gray-300 font-medium">{{ formatDate(note.created_at) }}</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div v-else class="absolute inset-0 bg-[#F5F5F7] p-4 sm:p-8 overflow-y-auto">
-                    <div class="max-w-4xl mx-auto">
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-2xl font-bold text-slate-800">人员管理</h2>
-                            <button @click="showAdmin = false" class="text-slate-500 hover:text-slate-800">关闭</button>
-                        </div>
-                        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                            <table class="w-full text-left text-sm text-slate-600">
-                                <thead class="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th class="px-6 py-4">用户名</th>
-                                        <th class="px-6 py-4">角色</th>
-                                        <th class="px-6 py-4">笔记数</th>
-                                        <th class="px-6 py-4 text-right">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100">
-                                    <tr v-for="u in userList" :key="u.id" class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 font-medium">{{ u.username }}</td>
-                                        <td class="px-6 py-4"><span :class="u.role==='admin'?'bg-yellow-100 text-yellow-700':'bg-gray-100'" class="px-2 py-1 rounded text-xs font-bold uppercase">{{ u.role }}</span></td>
-                                        <td class="px-6 py-4">{{ u.note_count }}</td>
-                                        <td class="px-6 py-4 text-right"><button v-if="u.role!=='admin'" @click="deleteUser(u.id, u.username)" class="text-red-500 hover:underline">删除</button></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </main>
-        </template>
+        <button @click="showShareModal = false" class="w-full mt-4 text-slate-400">取消</button>
     </div>
-
-    <script>
-        const { createApp, ref, onMounted } = Vue;
-        createApp({
-            setup() {
-                const user = ref(null); const mode = ref('login');
-                const notes = ref([]); const userList = ref([]);
-                const showAdmin = ref(false); const loading = ref(false); const errorMsg = ref('');
-                const authForm = ref({ username: '', password: '', inviteCode: '' });
-                const newTitle = ref(''); const newContent = ref('');
-
-                onMounted(() => {
-                    const savedUser = localStorage.getItem('baynotes_user');
-                    const savedToken = localStorage.getItem('baynotes_token');
-                    if (savedUser && savedToken) { user.value = JSON.parse(savedUser); fetchNotes(); }
-                });
-
-                const authFetch = async (url, options = {}) => {
-                    const token = localStorage.getItem('baynotes_token');
-                    if (!token) return logout();
-                    const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
-                    const res = await fetch(url, { ...options, headers });
-                    if (res.status === 401) logout();
-                    return res;
-                };
-
-                const handleAuth = async () => {
-                    loading.value = true; errorMsg.value = '';
-                    try {
-                        const res = await fetch('/api/auth', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: mode.value, ...authForm.value })
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || '操作失败');
-                        if (mode.value === 'register') {
-                            alert('注册成功'); mode.value = 'login'; authForm.value.password = '';
-                        } else {
-                            user.value = data.user;
-                            localStorage.setItem('baynotes_user', JSON.stringify(data.user));
-                            localStorage.setItem('baynotes_token', data.token);
-                            fetchNotes();
-                        }
-                    } catch (e) { errorMsg.value = e.message; } finally { loading.value = false; }
-                };
-
-                const logout = () => {
-                    user.value = null; notes.value = []; userList.value = []; showAdmin.value = false;
-                    localStorage.removeItem('baynotes_user'); localStorage.removeItem('baynotes_token');
-                };
-
-                const fetchNotes = async () => { try { const res = await authFetch('/api/notes'); if(res.ok) notes.value = await res.json(); } catch(e){} };
-                const fetchAllUsers = async () => { try { const res = await authFetch('/api/admin'); if(res.ok) userList.value = await res.json(); } catch(e){} };
-                const deleteUser = async (id, name) => { if(confirm(`删除用户 ${name}?`)) { await authFetch(`/api/admin?id=${id}`, { method: 'DELETE' }); fetchAllUsers(); }};
-                
-                const createNote = async () => {
-                    if (!newTitle.value) return;
-                    await authFetch('/api/notes', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ title: newTitle.value, content: newContent.value })
-                    });
-                    newTitle.value = ''; newContent.value = ''; fetchNotes();
-                };
-                const deleteNote = async (id) => { if (confirm('删除?')) { await authFetch(`/api/notes?id=${id}`, { method: 'DELETE' }); fetchNotes(); }};
-                const formatDate = (ts) => new Date(ts * 1000).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-                return { user, mode, authForm, loading, errorMsg, notes, userList, showAdmin, newTitle, newContent, handleAuth, logout, createNote, deleteNote, fetchAllUsers, deleteUser, formatDate };
-            }
-        }).mount('#app');
-    </script>
-</body>
-</html>
+</div>
