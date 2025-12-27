@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>BayNotes 共享笔记</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body class="bg-gray-50 p-6">
+    <div id="view" class="max-w-2xl mx-auto bg-white p-8 rounded-3xl shadow-sm">
+        <h1 id="title" class="text-3xl font-bold mb-4">加载中...</h1>
+        <div id="content" class="prose prose-slate"></div>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        fetch(`/api/share?id=${params.get('id')}&pwd=${params.get('pwd') || ''}`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.error) {
+                    document.getElementById('title').innerText = "访问受限";
+                    document.getElementById('content').innerText = data.error;
+                } else {
+                    document.getElementById('title').innerText = data.title;
+                    // 如果原笔记是加密的，访客无法直接解密（除非你分享了密钥），这里默认原样显示或提示
+                    document.getElementById('content').innerHTML = data.is_encrypted 
+                        ? "⚠️ 此内容在主库中已加密，无法直接分享查看。" 
+                        : marked.parse(data.content);
+                }
+            });
+    </script>
+</body>
+</html>
