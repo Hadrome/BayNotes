@@ -1,8 +1,0 @@
-name = "baynotes"
-compatibility_date = "2024-01-01"
-
-# 配置 D1 数据库绑定
-[[d1_databases]]
-binding = "BNBD"             # ★重要：代码中使用的变量名是 env.BNBD，这里必须填 "BNBD"
-database_name = "baynotes-db" # 你创建的数据库名称
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" # ★这里填你生成的 database_id
