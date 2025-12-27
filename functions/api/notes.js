@@ -1,6 +1,29 @@
-// functions/api/notes.js
+// functions/api/admin.js
 
-// 辅助函数：哈希验证
+// 验证管理员身份辅助函数
+async function verifyAdmin(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader) return null;
+  try {
+    const token = authHeader.split(' ')[1];
+    const userId = atob(token).split(':')[0];
+    
+    // 查询用户角色
+    const user = await env.BNBD.prepare("SELECT id, username, role FROM users WHERE id = ?").bind(userId).first();
+    
+    // 如果用户不存在
+    if (!user) return null;
+    
+    // 鉴权逻辑：数据库角色为 admin 或 环境变量匹配 SUPER_USER
+    if (user.role === 'admin' || (env.SUPER_USER && user.username === env.SUPER_USER)) {
+        return userId;
+    }
+    
+    return null;
+  } catch (e) { return null; }
+}
+
+// 密码哈希辅助函数
 async function hashPassword(password, salt) {
     const enc = new TextEncoder();
     const msgBuffer = enc.encode(password + salt);
@@ -8,129 +31,56 @@ async function hashPassword(password, salt) {
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function getUser(request) {
-  const auth = request.headers.get('Authorization');
-  if (!auth) return null;
-  try { return atob(auth.split(' ')[1]).split(':')[0]; } catch { return null; }
-}
-
 export async function onRequestGet(context) {
-  const userId = getUser(context.request);
-  if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
+  const adminId = await verifyAdmin(context.request, context.env);
+  if (!adminId) return Response.json({ error: "无权访问" }, { status: 403 });
 
-  const url = new URL(context.request.url);
-  const type = url.searchParams.get('type') || 'all'; 
-  const folderId = url.searchParams.get('folderId');
-  const query = url.searchParams.get('q');
-  
-  // ★ 安全检查：如果请求特定文件夹，且文件夹加密，验证密码
-  if (type === 'folder' && folderId) {
-      const folder = await context.env.BNBD.prepare("SELECT is_encrypted, password_hash, salt FROM folders WHERE id = ?").bind(folderId).first();
-      
-      if (folder && folder.is_encrypted) {
-          const pwdHeader = context.request.headers.get('X-Folder-Pwd');
-          // 如果没有提供密码头，或者密码验证失败
-          if (!pwdHeader) {
-              return Response.json({ error: "Locked", isLocked: true }, { status: 403 });
-          }
-          const hash = await hashPassword(pwdHeader, folder.salt);
-          if (hash !== folder.password_hash) {
-               return Response.json({ error: "Password Incorrect", isLocked: true }, { status: 403 });
-          }
-      }
-  }
-
-  let sql = "SELECT * FROM notes WHERE user_id = ?";
-  let params = [userId];
-
-  // 回收站清理 (48h)
-  if (type === 'trash') {
-    const expireTime = Math.floor(Date.now() / 1000) - (48 * 3600);
-    await context.env.BNBD.prepare("DELETE FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, expireTime).run();
-  }
-
-  if (type === 'trash') {
-    sql += " AND deleted_at IS NOT NULL";
-  } else {
-    sql += " AND deleted_at IS NULL"; 
-    if (type === 'shared') {
-      sql += " AND share_id IS NOT NULL";
-    } else if (type === 'folder' && folderId) {
-      sql += " AND folder_id = ?";
-      params.push(folderId);
-    } else if (type === 'search' && query) {
-      sql += " AND (title LIKE ? OR content LIKE ?)";
-      params.push(`%${query}%`, `%${query}%`);
-    } else if (type === 'root') {
-        sql += " AND folder_id IS NULL";
-    }
-  }
-  
-  sql += " ORDER BY created_at DESC";
-  const { results } = await context.env.BNBD.prepare(sql).bind(...params).all();
+  // 获取所有用户列表，包含 role 和 permissions
+  const { results } = await context.env.BNBD.prepare("SELECT id, username, role, permissions, created_at FROM users ORDER BY created_at DESC").all();
   return Response.json(results);
 }
 
 export async function onRequestPost(context) {
-  const userId = getUser(context.request);
-  if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
-
-  const body = await context.request.json();
-  // 移除 is_encrypted 处理，只保留基础字段
-  const { id, title, content, folderId } = body;
-
-  if (id) {
-    // 更新
-    await context.env.BNBD.prepare(
-      "UPDATE notes SET title=?, content=?, folder_id=? WHERE id=? AND user_id=?"
-    ).bind(title, content, folderId||null, id, userId).run();
-    return Response.json({ success: true });
-  } else {
-    // 新建
-    const newId = crypto.randomUUID();
-    const now = Math.floor(Date.now() / 1000);
-    await context.env.BNBD.prepare(
-      "INSERT INTO notes (id, user_id, title, content, folder_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(newId, userId, title, content, folderId||null, now).run();
-    return Response.json({ success: true, id: newId });
-  }
-}
-
-export async function onRequestPatch(context) {
-    const userId = getUser(context.request);
-    if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
+    const adminId = await verifyAdmin(context.request, context.env);
+    if (!adminId) return Response.json({ error: "无权访问" }, { status: 403 });
 
     const body = await context.request.json();
+    const { targetUserId, action, newPermissions, newPassword } = body;
 
-    if (body.action === 'restore') {
-        await context.env.BNBD.prepare("UPDATE notes SET deleted_at = NULL WHERE id = ? AND user_id = ?")
-            .bind(body.noteId, userId).run();
-        return Response.json({ success: true });
+    // === 权限更新逻辑 ===
+    if (action === 'update_permissions') {
+        // newPermissions 格式如 "edit,delete,share"
+        await context.env.BNBD.prepare("UPDATE users SET permissions = ? WHERE id = ?")
+            .bind(newPermissions, targetUserId).run();
+    } 
+    // === 密码重置逻辑 ===
+    else if (action === 'reset_password') {
+        const salt = crypto.randomUUID();
+        const hash = await hashPassword(newPassword, salt);
+        await context.env.BNBD.prepare("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?")
+            .bind(hash, salt, targetUserId).run();
+    }
+    else {
+        return Response.json({ error: "无效的操作类型" }, { status: 400 });
     }
 
-    // 分享逻辑
-    const { noteId, days, burn, pwd } = body;
-    const shareId = Math.random().toString(36).substring(2, 10);
-    const expireAt = days > 0 ? Math.floor(Date.now() / 1000) + (days * 86400) : null;
-    
-    await context.env.BNBD.prepare("UPDATE notes SET share_id = ?, share_pwd = ?, share_expire_at = ?, share_burn_after_read = ? WHERE id = ? AND user_id = ?").bind(shareId, pwd, expireAt, burn?1:0, noteId, userId).run();
-    
-    return Response.json({ success: true, shareId });
+    return Response.json({ success: true });
 }
 
 export async function onRequestDelete(context) {
-  const userId = getUser(context.request);
-  if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
-  
-  const url = new URL(context.request.url);
-  const id = url.searchParams.get('id');
-  const type = url.searchParams.get('type');
-  
-  if (type === 'hard') {
-      await context.env.BNBD.prepare("DELETE FROM notes WHERE id = ? AND user_id = ?").bind(id, userId).run();
-  } else {
-      const now = Math.floor(Date.now() / 1000);
-      await context.env.BNBD.prepare("UPDATE notes SET deleted_at = ? WHERE id = ? AND user_id = ?").bind(now, id, userId).run();
-  }
-  return Response.json({ success: true });
+    const adminId = await verifyAdmin(context.request, context.env);
+    if (!adminId) return Response.json({ error: "无权访问" }, { status: 403 });
+
+    const url = new URL(context.request.url);
+    const targetUserId = url.searchParams.get('id');
+
+    if (targetUserId === adminId) return Response.json({ error: "不能删除自己" }, { status: 400 });
+
+    // 删除用户
+    await context.env.BNBD.prepare("DELETE FROM users WHERE id = ?").bind(targetUserId).run();
+    // 级联删除该用户的数据
+    await context.env.BNBD.prepare("DELETE FROM notes WHERE user_id = ?").bind(targetUserId).run();
+    await context.env.BNBD.prepare("DELETE FROM folders WHERE user_id = ?").bind(targetUserId).run();
+
+    return Response.json({ success: true });
 }
