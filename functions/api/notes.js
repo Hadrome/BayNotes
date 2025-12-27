@@ -1,5 +1,4 @@
 // functions/api/notes.js
-// 只需更新 onRequestPost，其他保持不变，但为了完整性，这里列出关键修改部分
 
 function getUser(request) {
   const auth = request.headers.get('Authorization');
@@ -13,7 +12,6 @@ async function checkPermission(env, userId, action) {
   return user.permissions.includes(action);
 }
 
-// GET 保持不变
 export async function onRequestGet(context) {
   const userId = getUser(context.request);
   if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
@@ -22,6 +20,11 @@ export async function onRequestGet(context) {
   const type = url.searchParams.get('type') || 'all'; 
   const folderId = url.searchParams.get('folderId');
   const query = url.searchParams.get('q');
+
+  // ★修复：如果是搜索模式且没有关键词，直接返回空数组，不查数据库
+  if (type === 'search' && !query) {
+      return Response.json([]);
+  }
 
   let sql = "SELECT * FROM notes WHERE user_id = ?";
   let params = [userId];
@@ -42,7 +45,7 @@ export async function onRequestGet(context) {
       sql += " AND folder_id = ?";
       params.push(folderId);
     } else if (type === 'search' && query) {
-      // 搜索：仅搜索未加密的笔记，防止密文泄露或被误搜
+      // 搜索：仅搜索未加密的笔记
       sql += " AND is_encrypted = 0 AND (title LIKE ? OR content LIKE ?)";
       params.push(`%${query}%`, `%${query}%`);
     } else if (type === 'root') {
@@ -55,7 +58,7 @@ export async function onRequestGet(context) {
   return Response.json(results);
 }
 
-// POST 更新：不再关心前端怎么加密，只负责存
+// POST 保持不变
 export async function onRequestPost(context) {
   const userId = getUser(context.request);
   if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
@@ -64,7 +67,6 @@ export async function onRequestPost(context) {
   if (!canEdit) return Response.json({ error: "无编辑权限" }, { status: 403 });
 
   const body = await context.request.json();
-  // is_encrypted 前端传来是 true/false，数据库存 1/0
   const { id, title, content, is_encrypted, folderId } = body;
 
   if (id) {
@@ -81,9 +83,9 @@ export async function onRequestPost(context) {
   }
 }
 
-// PATCH (分享) 和 DELETE 保持原样，无需变动
+// PATCH 和 DELETE 保持不变，此处省略以节省篇幅，请保留原文件内容
 export async function onRequestPatch(context) {
-    // ... 原代码不变 ...
+    // ... 原代码 ...
     const userId = getUser(context.request);
     if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
     const canShare = await checkPermission(context.env, userId, 'share');
@@ -97,7 +99,7 @@ export async function onRequestPatch(context) {
 }
 
 export async function onRequestDelete(context) {
-  // ... 原代码不变 ...
+  // ... 原代码 ...
   const userId = getUser(context.request);
   if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
   const canDelete = await checkPermission(context.env, userId, 'delete');
