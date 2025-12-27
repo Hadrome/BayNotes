@@ -7,6 +7,8 @@ function getUser(request) {
 
 async function checkPermission(env, userId, action) {
   const user = await env.BNBD.prepare("SELECT role, permissions FROM users WHERE id = ?").bind(userId).first();
+  // ★修复：如果用户不存在（比如数据库被删），直接返回 false，防止报错
+  if (!user) return false;
   if (user.role === 'admin') return true;
   if (!user.permissions || user.permissions === 'all') return true;
   return user.permissions.includes(action);
@@ -21,7 +23,6 @@ export async function onRequestGet(context) {
   const folderId = url.searchParams.get('folderId');
   const query = url.searchParams.get('q');
 
-  // ★修复：如果是搜索模式且没有关键词，直接返回空数组，不查数据库
   if (type === 'search' && !query) {
       return Response.json([]);
   }
@@ -29,7 +30,6 @@ export async function onRequestGet(context) {
   let sql = "SELECT * FROM notes WHERE user_id = ?";
   let params = [userId];
 
-  // 懒惰清理回收站
   if (type === 'trash') {
     const expireTime = Math.floor(Date.now() / 1000) - (48 * 3600);
     await context.env.BNBD.prepare("DELETE FROM notes WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(userId, expireTime).run();
@@ -45,7 +45,6 @@ export async function onRequestGet(context) {
       sql += " AND folder_id = ?";
       params.push(folderId);
     } else if (type === 'search' && query) {
-      // 搜索：仅搜索未加密的笔记
       sql += " AND is_encrypted = 0 AND (title LIKE ? OR content LIKE ?)";
       params.push(`%${query}%`, `%${query}%`);
     } else if (type === 'root') {
@@ -58,7 +57,6 @@ export async function onRequestGet(context) {
   return Response.json(results);
 }
 
-// POST 保持不变
 export async function onRequestPost(context) {
   const userId = getUser(context.request);
   if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
@@ -83,9 +81,7 @@ export async function onRequestPost(context) {
   }
 }
 
-// PATCH 和 DELETE 保持不变，此处省略以节省篇幅，请保留原文件内容
 export async function onRequestPatch(context) {
-    // ... 原代码 ...
     const userId = getUser(context.request);
     if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
     const canShare = await checkPermission(context.env, userId, 'share');
@@ -99,7 +95,6 @@ export async function onRequestPatch(context) {
 }
 
 export async function onRequestDelete(context) {
-  // ... 原代码 ...
   const userId = getUser(context.request);
   if (!userId) return Response.json({ error: "未授权" }, { status: 401 });
   const canDelete = await checkPermission(context.env, userId, 'delete');
