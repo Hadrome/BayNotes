@@ -4,240 +4,320 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BayNotes</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
-        body { font-family: 'Inter', 'Noto Sans SC', sans-serif; }
-        
-        /* 侧边栏微动效 */
-        .sidebar-item { 
-            @apply flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer text-slate-500 hover:bg-gray-100 hover:text-slate-900 transition-all duration-200 select-none text-sm font-medium relative; 
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                        serif: ['Merriweather', 'ui-serif', 'Georgia', 'Cambria', 'Times New Roman', 'Times', 'serif'],
+                    },
+                    colors: {
+                        notion: {
+                            bg: '#FFFFFF',
+                            sidebar: '#F7F7F5',
+                            hover: '#EFEFEF',
+                            text: '#37352F',
+                            dim: '#ACABA9'
+                        }
+                    }
+                }
+            }
         }
-        .sidebar-item:active { @apply scale-95; }
-        .sidebar-item.active { @apply bg-white text-blue-600 shadow-sm ring-1 ring-gray-100; }
-        
-        /* Notion 风格编辑器 */
-        .editor-container { max-width: 900px; margin: 0 auto; padding: 40px 60px; height: 100%; display: flex; flex-direction: column; }
-        .editor-title { 
-            @apply text-4xl font-bold text-slate-900 placeholder:text-gray-300 outline-none mb-6 bg-transparent w-full leading-tight; 
-        }
-        .editor-content { 
-            @apply flex-1 w-full outline-none resize-none text-slate-700 text-base leading-relaxed bg-transparent font-sans; 
-        }
-        .editor-content::placeholder { color: #e2e8f0; }
+    </script>
 
-        /* 滚动条美化 */
-        .custom-scroll::-webkit-scrollbar { width: 6px; }
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@300;400;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; color: #37352F; background-color: white; }
+        
+        /* 自定义滚动条 */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
-        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+
+        /* 侧边栏动画 */
+        .sidebar-item { 
+            @apply flex items-center gap-2.5 px-3 py-1.5 rounded-md cursor-pointer text-gray-500 hover:bg-gray-200/60 hover:text-gray-900 transition-colors select-none text-sm font-medium my-0.5; 
+        }
+        .sidebar-item.active { @apply bg-gray-200 text-gray-900 font-semibold; }
+        
+        /* 编辑器样式 */
+        .editor-textarea {
+            @apply w-full resize-none outline-none bg-transparent leading-relaxed text-gray-800 placeholder-gray-300 font-mono text-sm;
+            min-height: 60vh;
+        }
+        
+        /* 预览模式下的排版优化 */
+        .prose h1 { margin-bottom: 0.5em; }
+        .prose p { margin-bottom: 0.8em; }
+        .prose pre { background-color: #F7F7F5; border-radius: 4px; color: #37352F; border: 1px solid #E5E5E5; }
 
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         
-        /* 笔记列表项 */
-        .note-item { @apply p-3.5 mx-2 rounded-xl cursor-pointer border border-transparent hover:bg-white hover:shadow-sm transition-all duration-200 mb-1 group relative; }
-        .note-item.active { @apply bg-white border-gray-100 shadow-md ring-1 ring-black/5 z-10; }
+        [v-cloak] { display: none; }
     </style>
 </head>
-<body class="bg-white text-slate-800 h-screen flex overflow-hidden selection:bg-blue-100">
+<body class="h-screen flex overflow-hidden selection:bg-blue-100/50 selection:text-blue-900">
     
-    <div id="app" class="w-full h-full flex relative">
+    <div id="app" v-cloak class="w-full h-full flex relative">
 
-        <div v-if="appLoading" class="fixed inset-0 z-[200] bg-white flex items-center justify-center">
-            <i class="ph ph-spinner spin text-2xl text-slate-400"></i>
+        <div v-if="appLoading" class="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center gap-3">
+            <i class="ph ph-spinner spin text-3xl text-gray-300"></i>
+            <span class="text-xs text-gray-400 font-medium tracking-widest uppercase">BayNotes Loading</span>
         </div>
 
         <div v-if="!user && !appLoading" class="absolute inset-0 z-[100] flex items-center justify-center bg-[#F7F7F5]">
-            <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 p-8 transform transition-all">
+            <div class="w-full max-w-[360px] bg-white rounded-xl shadow-xl border border-gray-100 p-8 transform transition-all">
                 <div class="text-center mb-8">
-                    <h1 class="text-3xl font-bold text-slate-800 tracking-tight">BayNotes</h1>
-                    <p class="text-slate-400 text-sm mt-2">极简 • 安全 • 优雅</p>
+                    <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gray-900 text-white mb-4 shadow-lg">
+                        <i class="ph ph-notebook text-2xl"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-gray-800 tracking-tight">BayNotes</h1>
+                    <p class="text-gray-400 text-xs mt-2 uppercase tracking-wide">Secure • Minimal • Fast</p>
                 </div>
-                <div class="space-y-4">
-                    <input v-model="authForm.username" @keyup.enter="handleAuth" placeholder="用户名" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:bg-white transition">
-                    <input v-model="authForm.password" @keyup.enter="handleAuth" type="password" placeholder="密码" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:bg-white transition">
-                    <input v-if="mode==='register'" v-model="authForm.inviteCode" placeholder="邀请码" class="w-full bg-gray-50 border border-gray-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 focus:bg-white transition">
-                    <button @click="handleAuth" :disabled="authLoading" class="w-full bg-slate-900 text-white py-3.5 rounded-xl text-sm font-bold flex justify-center items-center gap-2 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5 transition-all">
+                <div class="space-y-3">
+                    <input v-model="authForm.username" @keyup.enter="handleAuth" placeholder="用户名" class="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm outline-none focus:border-gray-400 focus:bg-white transition placeholder-gray-400">
+                    <input v-model="authForm.password" @keyup.enter="handleAuth" type="password" placeholder="密码" class="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm outline-none focus:border-gray-400 focus:bg-white transition placeholder-gray-400">
+                    <input v-if="mode==='register'" v-model="authForm.inviteCode" placeholder="邀请码" class="w-full bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg text-sm outline-none focus:border-gray-400 focus:bg-white transition placeholder-gray-400">
+                    
+                    <button @click="handleAuth" :disabled="authLoading" class="w-full bg-gray-900 text-white py-2.5 rounded-lg text-sm font-semibold flex justify-center items-center gap-2 hover:bg-black transition-all shadow-md active:scale-[0.98]">
                         <i v-if="authLoading" class="ph ph-spinner spin"></i> {{ mode==='login'?'进入工作台':'创建账号' }}
                     </button>
-                    <button type="button" @click="mode=mode==='login'?'register':'login'" class="w-full text-center text-xs text-slate-400 hover:text-slate-600 pt-2">
-                        {{ mode==='login'?'还没有账号？点击注册':'已有账号？点击登录' }}
-                    </button>
+                    
+                    <div class="pt-4 text-center">
+                         <button type="button" @click="mode=mode==='login'?'register':'login'" class="text-xs text-gray-400 hover:text-gray-600 transition underline decoration-dotted">
+                            {{ mode==='login'?'注册新账号':'返回登录' }}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
 
         <template v-else-if="user">
-            <aside :class="sidebarOpen ? 'w-64 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-full overflow-hidden'" class="flex-shrink-0 bg-[#F7F7F5] border-r border-gray-200 flex flex-col transition-all duration-300 relative z-20">
+            <aside :class="sidebarOpen ? 'w-60 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-full overflow-hidden'" class="flex-shrink-0 bg-[#F7F7F5] flex flex-col transition-all duration-300 relative z-20 border-r border-gray-200/50">
                 
-                <div class="p-5 flex items-center gap-3 select-none">
-                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white flex items-center justify-center text-sm font-bold shadow-md">{{ user.username[0].toUpperCase() }}</div>
-                    <div class="flex-1 min-w-0">
-                        <div class="text-sm font-bold truncate text-slate-800">{{ user.username }}'s Notes</div>
-                        <div class="text-[10px] text-slate-400 font-medium tracking-wide">{{ user.role === 'admin' ? 'ADMINISTRATOR' : 'FREE PLAN' }}</div>
-                    </div>
+                <div class="p-4 flex items-center gap-3 select-none mb-2">
+                    <div class="w-6 h-6 rounded bg-gray-200 text-gray-600 flex items-center justify-center text-xs font-bold">{{ user.username[0].toUpperCase() }}</div>
+                    <div class="text-sm font-medium text-gray-700 truncate flex-1">{{ user.username }}</div>
+                    <button @click="initNewNote" class="text-gray-400 hover:text-gray-800 transition"><i class="ph ph-plus-circle text-lg"></i></button>
                 </div>
 
-                <div class="px-3 pb-4">
-                    <button @click="initNewNote" class="w-full flex items-center justify-center gap-2 bg-white border border-gray-200/60 text-slate-600 py-2.5 rounded-xl shadow-sm hover:shadow-md hover:border-blue-200 hover:text-blue-600 transition-all group">
-                        <i class="ph ph-plus-circle text-lg text-blue-500 group-hover:scale-110 transition-transform"></i>
-                        <span class="text-sm font-semibold">新建笔记</span>
-                    </button>
-                </div>
-
-                <div class="px-3 flex-1 overflow-y-auto custom-scroll space-y-1">
+                <div class="px-2 flex-1 overflow-y-auto custom-scroll space-y-0.5">
                     <div @click="doSearch" :class="{active: currentView==='search'}" class="sidebar-item">
-                        <i class="ph ph-magnifying-glass text-lg"></i> 搜索
+                        <i class="ph ph-magnifying-glass text-lg"></i> <span class="truncate">搜索</span>
                     </div>
                     <div @click="setView('all')" :class="{active: currentView==='all'}" class="sidebar-item">
-                        <i class="ph ph-house"></i> 全部笔记
+                        <i class="ph ph-house text-lg"></i> <span>全部笔记</span>
                     </div>
                     <div @click="setView('trash')" :class="{active: currentView==='trash'}" class="sidebar-item">
-                        <i class="ph ph-trash"></i> 回收站
+                        <i class="ph ph-trash text-lg"></i> <span>回收站</span>
                     </div>
 
-                    <div class="mt-8 px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex justify-between group">
+                    <div class="mt-6 px-3 mb-1 text-[11px] font-bold text-gray-400 uppercase flex justify-between group">
                         <span>Folders</span>
-                        <i @click.stop="createFolder(null)" class="ph ph-plus cursor-pointer hover:text-slate-800 opacity-0 group-hover:opacity-100 transition p-0.5 hover:bg-gray-200 rounded" title="新建文件夹"></i>
+                        <i @click.stop="createFolder(null)" class="ph ph-plus cursor-pointer hover:text-gray-900 opacity-0 group-hover:opacity-100 transition" title="新建文件夹"></i>
                     </div>
                     
-                    <div v-for="folder in rootFolders" :key="folder.id" class="space-y-1">
+                    <div v-for="folder in rootFolders" :key="folder.id">
                         <div @click="handleFolderClick(folder)" :class="{active: currentView === 'folder' && currentFolderId === folder.id}" class="sidebar-item justify-between group">
-                            <span class="flex items-center gap-2 truncate text-slate-700">
-                                <i :class="folder.is_encrypted ? (isFolderUnlocked(folder.id) ? 'ph-folder-open text-slate-500' : 'ph-lock-key-fill text-yellow-500') : 'ph-folder'" class="ph text-lg"></i> 
+                            <span class="flex items-center gap-2 truncate text-gray-600">
+                                <i :class="folder.is_encrypted ? (isFolderUnlocked(folder.id) ? 'ph-folder-open' : 'ph-lock-key-fill text-yellow-600/70') : 'ph-folder'" class="ph text-lg"></i> 
                                 {{ folder.name }}
                             </span>
-                            <div class="hidden group-hover:flex gap-1 text-slate-400 items-center">
-                                <i v-if="folder.is_encrypted && isFolderUnlocked(folder.id)" @click.stop="lockFolder(folder.id)" class="ph ph-lock-open hover:text-yellow-600 p-1 rounded" title="重新锁定"></i>
-                                <i @click.stop="createFolder(folder.id)" class="ph ph-plus hover:text-slate-800 p-1 hover:bg-gray-200 rounded"></i>
-                                <i @click.stop="deleteFolder(folder.id)" class="ph ph-x hover:text-red-500 p-1 hover:bg-gray-200 rounded"></i>
+                            <div class="hidden group-hover:flex items-center text-gray-400">
+                                <i v-if="folder.is_encrypted && isFolderUnlocked(folder.id)" @click.stop="lockFolder(folder.id)" class="ph ph-lock-open hover:text-yellow-600 p-1" title="锁定"></i>
+                                <i @click.stop="createFolder(folder.id)" class="ph ph-plus hover:text-gray-900 p-1"></i>
+                                <i @click.stop="deleteFolder(folder.id)" class="ph ph-dots-three hover:text-gray-900 p-1"></i>
                             </div>
                         </div>
-                        <div v-for="sub in getSubFolders(folder.id)" :key="sub.id" @click="handleFolderClick(sub)" :class="{active: currentView === 'folder' && currentFolderId === sub.id}" class="sidebar-item pl-9 text-xs group justify-between">
-                            <span class="truncate flex items-center gap-2 border-l border-gray-200 pl-2">
-                                <i v-if="sub.is_encrypted" :class="isFolderUnlocked(sub.id)?'ph-lock-open':'ph-lock-key-fill text-yellow-500'" class="ph text-xs"></i>
+                        <div v-for="sub in getSubFolders(folder.id)" :key="sub.id" @click="handleFolderClick(sub)" :class="{active: currentView === 'folder' && currentFolderId === sub.id}" class="sidebar-item pl-8 text-xs group justify-between">
+                            <span class="truncate flex items-center gap-2 border-l border-gray-300 pl-2 text-gray-500">
+                                <i v-if="sub.is_encrypted" :class="isFolderUnlocked(sub.id)?'ph-lock-open':'ph-lock-key-fill text-yellow-600/70'" class="ph text-xs"></i>
                                 {{ sub.name }}
                             </span>
-                            <i @click.stop="deleteFolder(sub.id)" class="ph ph-x hidden group-hover:block hover:text-red-500 text-slate-400 p-1"></i>
+                            <i @click.stop="deleteFolder(sub.id)" class="ph ph-x hidden group-hover:block hover:text-red-500 text-gray-400 p-1"></i>
                         </div>
                     </div>
                 </div>
 
-                <div class="p-4 border-t border-gray-200">
-                    <div @click="logout" class="sidebar-item text-xs hover:text-red-600 justify-center">
-                        <i class="ph ph-sign-out"></i> 退出登录
+                <div class="p-3 border-t border-gray-200/50">
+                    <div @click="logout" class="sidebar-item text-xs hover:bg-red-50 hover:text-red-600 justify-center gap-1">
+                        <i class="ph ph-sign-out"></i> 退出
                     </div>
                 </div>
             </aside>
 
-            <div class="w-72 flex-shrink-0 border-r border-gray-200 flex flex-col bg-[#FCFBF9] transition-all relative"> 
-                <div class="h-14 flex items-center px-4 border-b border-gray-100 justify-between shrink-0 bg-white/80 backdrop-blur sticky top-0 z-10">
-                    <span class="font-bold text-sm text-slate-700 flex items-center gap-2">
-                        <button v-if="!sidebarOpen" @click="sidebarOpen=true" class="hover:bg-gray-100 p-1 rounded"><i class="ph ph-list"></i></button>
+            <div class="w-72 flex-shrink-0 border-r border-gray-200/50 flex flex-col bg-white transition-all relative z-10" :class="{'hidden md:flex': hasActiveNote && window.innerWidth < 768}"> 
+                <div class="h-12 flex items-center px-4 border-b border-gray-100 justify-between shrink-0 sticky top-0 bg-white/95 backdrop-blur z-10">
+                    <span class="font-semibold text-sm text-gray-700 flex items-center gap-2">
+                        <button v-if="!sidebarOpen" @click="sidebarOpen=true" class="hover:bg-gray-100 p-1 rounded text-gray-500"><i class="ph ph-list"></i></button>
                         {{ getViewTitle() }}
                     </span>
-                    <button @click="initNewNote" class="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 transition"><i class="ph ph-plus text-lg"></i></button>
+                    <button @click="initNewNote" class="text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 transition"><i class="ph ph-pencil-simple-line text-lg"></i></button>
                 </div>
                 
-                <div v-if="currentView === 'search'" class="p-3 border-b border-gray-100">
-                    <div class="relative group">
-                        <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 group-focus-within:text-blue-500 transition"></i>
-                        <input ref="searchInputRef" v-model="searchQuery" @keyup.enter="fetchNotes" placeholder="按回车搜索..." class="w-full text-sm bg-white border border-gray-200 rounded-lg py-2 pl-9 pr-2 outline-none focus:border-blue-500 transition shadow-sm">
+                <div v-if="currentView === 'search'" class="p-3 border-b border-gray-50">
+                    <div class="relative">
+                        <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-gray-400"></i>
+                        <input ref="searchInputRef" v-model="searchQuery" @keyup.enter="fetchNotes" placeholder="输入关键词回车..." class="w-full text-sm bg-gray-50 border border-gray-200 rounded-md py-2 pl-9 pr-2 outline-none focus:border-blue-400 transition">
                     </div>
                 </div>
 
-                <div class="flex-1 overflow-y-auto custom-scroll py-2">
-                    <div v-if="listLoading" class="flex justify-center py-10"><i class="ph ph-spinner spin text-slate-400 text-xl"></i></div>
-                    <div v-else-if="folderLocked" class="flex flex-col items-center justify-center pt-20 text-slate-400 gap-2">
-                        <i class="ph ph-lock-key text-4xl text-gray-300"></i>
-                        <span class="text-xs">该文件夹已锁定</span>
+                <div class="flex-1 overflow-y-auto custom-scroll">
+                    <div v-if="listLoading" class="flex justify-center py-10"><i class="ph ph-spinner spin text-gray-300 text-xl"></i></div>
+                    
+                    <div v-else-if="folderLocked" class="flex flex-col items-center justify-center pt-24 text-gray-400 gap-4 px-6 text-center">
+                        <div class="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center">
+                            <i class="ph ph-lock-key text-3xl text-gray-300"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-600 mb-1">已加密</p>
+                            <p class="text-xs text-gray-400">此文件夹内容受密码保护</p>
+                        </div>
+                        <button @click="promptUnlock" class="mt-2 bg-gray-900 text-white px-4 py-1.5 rounded-full text-xs font-bold hover:bg-black transition shadow-sm">点击解锁</button>
                     </div>
+
                     <template v-else>
-                        <div v-for="note in notes" :key="note.id" @click="selectNote(note)" :class="currentNote && currentNote.id === note.id ? 'active' : ''" class="note-item">
-                            <div class="flex items-center gap-2 mb-1.5">
-                                <h4 class="font-semibold text-sm truncate text-slate-700 flex-1">{{ note.title || '无标题' }}</h4>
+                        <div v-for="note in notes" :key="note.id" @click="selectNote(note)" :class="currentNote && currentNote.id === note.id ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-100' : 'border-transparent hover:bg-gray-50'" class="mx-2 my-1 p-3 rounded-lg border cursor-pointer transition-all group relative">
+                            <div class="mb-1">
+                                <h4 class="font-semibold text-sm truncate text-gray-700 leading-tight" :class="{'text-blue-700': currentNote?.id === note.id}">{{ note.title || '无标题' }}</h4>
                             </div>
-                            <div class="flex justify-between items-center">
-                                <p class="text-[11px] text-slate-400 line-clamp-1 flex-1 pr-2 opacity-80">{{ note.content || '无内容' }}</p>
-                                <span class="text-[10px] text-slate-300">{{ formatDateShort(note.created_at) }}</span>
+                            <p class="text-xs text-gray-400 line-clamp-2 h-8 leading-relaxed mb-2">{{ note.content ? note.content.replace(/[#*`]/g, '') : '写点什么...' }}</p>
+                            <div class="flex items-center justify-between text-[10px] text-gray-300">
+                                <span>{{ relativeTime(note.created_at) }}</span>
+                                <i v-if="note.share_id" class="ph ph-share-network text-blue-400"></i>
                             </div>
                         </div>
-                        <div v-if="notes.length === 0" class="text-center text-slate-300 mt-20 text-xs">空空如也</div>
+                        <div v-if="notes.length === 0" class="flex flex-col items-center justify-center mt-20 text-gray-300 gap-2">
+                            <i class="ph ph-ghost text-2xl"></i>
+                            <span class="text-xs">没有找到笔记</span>
+                        </div>
                     </template>
                 </div>
             </div>
 
-            <main class="flex-1 flex flex-col bg-white min-w-0 relative">
-                <header v-if="hasActiveNote && currentView !== 'trash'" class="h-14 flex items-center justify-between px-6 shrink-0 z-20 bg-white">
-                    <div class="flex items-center gap-2 text-xs text-slate-400">
-                        <button @click="sidebarOpen = !sidebarOpen" class="hover:text-slate-800 transition p-1"><i class="ph ph-arrows-left-right text-lg"></i></button>
+            <main class="flex-1 flex flex-col bg-white min-w-0 relative h-full">
+                <header v-if="hasActiveNote && currentView !== 'trash'" class="h-12 flex items-center justify-between px-6 shrink-0 z-20 bg-white sticky top-0">
+                    <div class="flex items-center gap-2 text-xs text-gray-400">
+                        <button v-if="window.innerWidth < 768" @click="currentNote=null" class="mr-2 text-gray-600"><i class="ph ph-caret-left text-lg"></i></button>
+                        
+                        <button @click="sidebarOpen = !sidebarOpen" class="hover:text-gray-800 transition hidden md:block" title="切换侧边栏"><i class="ph ph-sidebar-simple text-lg"></i></button>
+                        
+                        <span class="mx-1 text-gray-300">/</span>
                         <span>{{ currentNote && currentNote.folderId ? getFolderName(currentNote.folderId) : '根目录' }}</span>
-                        <span v-if="saveStatus !== '已同步'" class="text-blue-500 font-bold ml-2 animate-pulse">{{ saveStatus }}</span>
+                        
+                        <span class="ml-3 flex items-center gap-1 transition-all" :class="saveStatus === '同步中...' ? 'text-blue-500' : 'text-gray-300'">
+                            <i v-if="saveStatus === '同步中...'" class="ph ph-arrows-clockwise spin"></i>
+                            <i v-else-if="saveStatus === '已同步'" class="ph ph-cloud-check"></i>
+                            <i v-else class="ph ph-warning-circle text-red-400"></i>
+                            <span class="hidden sm:inline text-[10px]">{{ saveStatus }}</span>
+                        </span>
                     </div>
-                    <div class="flex items-center gap-1">
-                         <button @click="openShare(currentNote)" :class="currentNote.share_id ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-slate-600'" class="px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1 hover:bg-gray-100"><i class="ph ph-share-network"></i> {{ currentNote.share_id ? '已分享' : '分享' }}</button>
-                         <div class="h-4 w-px bg-gray-200 mx-2"></div>
-                         <button @click="deleteNote(currentNote)" class="text-slate-400 hover:text-red-500 hover:bg-red-50 px-2 py-1.5 rounded-md transition" title="删除笔记"><i class="ph ph-trash text-lg"></i></button>
+
+                    <div class="flex items-center gap-1.5">
+                         <div class="bg-gray-100 p-0.5 rounded-lg flex text-xs font-medium text-gray-500 mr-2">
+                             <button @click="isPreviewMode=false" :class="!isPreviewMode?'bg-white text-black shadow-sm':''" class="px-3 py-1 rounded-md transition-all">编辑</button>
+                             <button @click="isPreviewMode=true" :class="isPreviewMode?'bg-white text-black shadow-sm':''" class="px-3 py-1 rounded-md transition-all">预览</button>
+                         </div>
+
+                         <button @click="openShare(currentNote)" :class="currentNote.share_id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'" class="p-1.5 rounded-md transition" title="分享"><i class="ph ph-share-network text-lg"></i></button>
+                         <button @click="deleteNote(currentNote)" class="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-md transition" title="删除"><i class="ph ph-trash text-lg"></i></button>
                     </div>
                 </header>
 
-                <div v-if="hasActiveNote && currentView !== 'trash'" class="flex-1 overflow-y-auto custom-scroll relative">
-                    <div class="editor-container">
-                        <input v-model="currentNote.title" @input="debouncedSave" placeholder="无标题" class="editor-title">
+                <div v-if="hasActiveNote && currentView !== 'trash'" class="flex-1 overflow-y-auto custom-scroll relative bg-white" id="editorContainer">
+                    <div class="max-w-3xl mx-auto px-8 py-12 min-h-full flex flex-col">
                         
-                        <div class="sticky top-0 bg-white/95 backdrop-blur z-10 flex items-center gap-1 py-2 mb-4 border-b border-gray-100 text-slate-500 w-full">
+                        <input v-model="currentNote.title" @input="debouncedSave" placeholder="无标题" class="text-4xl font-bold text-gray-900 placeholder-gray-300 outline-none mb-6 bg-transparent w-full leading-tight font-serif">
+                        
+                        <div v-if="!isPreviewMode" class="flex items-center gap-1 py-2 mb-6 border-b border-gray-100 text-gray-400 sticky top-0 bg-white z-10">
                             <button @click="insertFormat('**', '**')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="加粗"><i class="ph ph-text-b"></i></button>
                             <button @click="insertFormat('*', '*')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="斜体"><i class="ph ph-text-italic"></i></button>
-                            <button @click="insertFormat('## ', '')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="标题2"><i class="ph ph-text-h-two"></i></button>
+                            <button @click="insertFormat('## ', '')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="标题"><i class="ph ph-text-h-two"></i></button>
                             <button @click="insertFormat('- ', '')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="列表"><i class="ph ph-list-dashes"></i></button>
-                            <button @click="insertFormat('> ', '')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="引用"><i class="ph ph-quotes"></i></button>
-                            <button @click="insertFormat('```\n', '\n```')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="代码块"><i class="ph ph-code"></i></button>
+                            <button @click="insertFormat('`', '`')" class="p-1.5 hover:bg-gray-100 rounded hover:text-black" title="代码"><i class="ph ph-code"></i></button>
+                            <div class="flex-1"></div>
+                            <span class="text-[10px] text-gray-300 select-none">Markdown 支持</span>
                         </div>
 
-                        <textarea id="mainEditor" v-model="currentNote.content" @input="debouncedSave" @keydown.tab.prevent="handleTab" placeholder="输入内容，支持 Markdown..." class="editor-content custom-scroll"></textarea>
+                        <div class="flex-1 relative">
+                            <textarea 
+                                v-show="!isPreviewMode"
+                                ref="textareaRef"
+                                id="mainEditor" 
+                                v-model="currentNote.content" 
+                                @input="handleInput" 
+                                @keydown.ctrl.s.prevent="saveNote"
+                                @keydown.meta.s.prevent="saveNote"
+                                @keydown.tab.prevent="handleTab" 
+                                placeholder="输入内容，支持 Markdown..." 
+                                class="editor-textarea"
+                            ></textarea>
+
+                            <div v-if="isPreviewMode" class="prose prose-slate prose-lg max-w-none font-serif text-gray-800" v-html="renderedContent"></div>
+                        </div>
                     </div>
                 </div>
 
-                <div v-else-if="currentView === 'trash'" class="flex-1 flex flex-col items-center justify-center text-slate-300">
-                    <i class="ph ph-trash text-4xl mb-2"></i>
-                    <p class="text-xs">回收站模式 (无法编辑)</p>
-                </div>
-
-                <div v-else class="flex-1 flex flex-col items-center justify-center text-slate-200">
-                    <i class="ph ph-pencil-slash text-6xl mb-4 text-slate-100"></i>
-                    <p class="text-sm font-medium text-slate-300">选择或创建一个笔记开始书写</p>
+                <div v-else class="flex-1 flex flex-col items-center justify-center bg-[#FCFBF9] text-gray-300 select-none">
+                    <div v-if="currentView === 'trash'" class="text-center">
+                        <i class="ph ph-trash text-4xl mb-3"></i>
+                        <p class="text-sm">笔记在回收站中，无法编辑</p>
+                    </div>
+                    <div v-else class="text-center">
+                        <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+                            <i class="ph ph-pencil-simple-slash text-4xl text-gray-300"></i>
+                        </div>
+                        <p class="text-sm font-medium text-gray-400">选择笔记或新建开始记录</p>
+                    </div>
                 </div>
             </main>
         </template>
 
         <div v-if="folderModal.show" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 backdrop-blur-sm">
-            <div class="bg-white p-6 rounded-2xl w-80 shadow-2xl transform transition-all scale-100">
-                <h3 class="font-bold mb-1 text-slate-800 text-lg">{{ folderModal.mode === 'create' ? '新建文件夹' : '解锁文件夹' }}</h3>
-                <p class="text-xs text-slate-400 mb-4">{{ folderModal.mode === 'create' ? '输入名称，可选填密码以加密。' : '请输入密码访问该文件夹。' }}</p>
+            <div class="bg-white p-6 rounded-xl w-80 shadow-2xl transform transition-all scale-100 border border-gray-100">
+                <div class="text-center mb-4">
+                    <div class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                        <i :class="folderModal.mode==='create'?'ph-folder-plus':'ph-lock-key'" class="ph text-xl text-gray-700"></i>
+                    </div>
+                    <h3 class="font-bold text-gray-800">{{ folderModal.mode === 'create' ? '新建文件夹' : '验证密码' }}</h3>
+                </div>
                 
-                <input v-if="folderModal.mode === 'create'" v-model="folderModal.name" placeholder="文件夹名称" class="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg mb-3 text-sm outline-none focus:border-blue-500">
+                <input v-if="folderModal.mode === 'create'" v-model="folderModal.name" placeholder="文件夹名称" class="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg mb-3 text-sm outline-none focus:border-gray-800 transition">
                 
-                <input type="password" v-model="folderModal.pwd" @keyup.enter="handleFolderSubmit" :placeholder="folderModal.mode === 'create' ? '加密密码 (留空则不加密)' : '输入密码'" class="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg mb-4 text-sm outline-none focus:border-blue-500">
+                <input type="password" v-model="folderModal.pwd" @keyup.enter="handleFolderSubmit" :placeholder="folderModal.mode === 'create' ? '可选：设置访问密码' : '请输入文件夹密码'" class="w-full bg-gray-50 border border-gray-200 p-2.5 rounded-lg mb-4 text-sm outline-none focus:border-gray-800 transition">
                 
-                <div class="flex gap-3">
-                    <button @click="folderModal.show=false" class="flex-1 py-2.5 text-slate-500 bg-gray-100 rounded-lg text-sm font-medium hover:bg-gray-200 transition">取消</button>
-                    <button @click="handleFolderSubmit" class="flex-1 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800 transition">确定</button>
+                <div class="flex gap-2">
+                    <button @click="folderModal.show=false" class="flex-1 py-2 text-gray-500 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition">取消</button>
+                    <button @click="handleFolderSubmit" class="flex-1 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition shadow-lg shadow-gray-200">确定</button>
                 </div>
             </div>
         </div>
 
-        <div v-if="shareModal.show" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-            <div class="bg-white p-6 rounded-xl w-96 shadow-xl border border-gray-100">
-                <div class="flex justify-between mb-4"><h3 class="font-bold flex gap-2 items-center"><i class="ph ph-share-network"></i> 分享笔记</h3><button @click="shareModal.show=false"><i class="ph ph-x"></i></button></div>
-                <div class="space-y-3 text-sm">
-                    <div class="flex justify-between items-center bg-gray-50 p-2 rounded"><label>有效期 (天)</label><input v-model="shareModal.days" type="number" class="border p-1 w-16 text-center rounded"></div>
-                    <button @click="doShare" class="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 transition">生成链接</button>
-                    <div v-if="shareModal.result" class="bg-green-50 p-3 rounded border border-green-100 mt-2"><p class="text-[10px] text-green-600 font-bold">LINK:</p><p class="text-xs break-all select-all font-mono">{{ shareModal.result }}</p></div>
+        <div v-if="shareModal.show" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-sm">
+            <div class="bg-white p-5 rounded-xl w-96 shadow-xl border border-gray-100">
+                <div class="flex justify-between mb-4 items-center">
+                    <h3 class="font-bold text-gray-800 flex gap-2 items-center text-sm"><i class="ph ph-share-network"></i> 分享笔记</h3>
+                    <button @click="shareModal.show=false" class="text-gray-400 hover:text-gray-800"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="space-y-4 text-sm">
+                    <div class="flex justify-between items-center bg-gray-50 p-2.5 rounded-lg border border-gray-100">
+                        <label class="text-gray-600 font-medium">有效期 (天)</label>
+                        <input v-model="shareModal.days" type="number" class="border border-gray-200 p-1 w-16 text-center rounded bg-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <button @click="doShare" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 transition shadow-md shadow-blue-100">生成分享链接</button>
+                    <div v-if="shareModal.result" class="bg-green-50 p-3 rounded-lg border border-green-100 mt-2 relative group">
+                        <p class="text-[10px] text-green-600 font-bold mb-1">LINK GENERATED</p>
+                        <p class="text-xs break-all font-mono text-green-800 select-all">{{ shareModal.result }}</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -255,10 +335,12 @@
                 const sidebarOpen = ref(window.innerWidth > 768);
                 const currentView = ref('all');
                 const currentFolderId = ref(null);
-                const folderLocked = ref(false); // 当前选中的文件夹是否处于未解锁状态
+                const folderLocked = ref(false); 
                 const searchQuery = ref('');
                 const searchInputRef = ref(null);
                 const saveStatus = ref('已同步');
+                const isPreviewMode = ref(false); // 预览模式开关
+                const textareaRef = ref(null);
                 
                 const user = ref(null);
                 const notes = ref([]);
@@ -266,7 +348,7 @@
                 const currentNote = ref(null);
                 
                 // Unlocked Folder IDs (Session Storage Logic)
-                const unlockedFolderIds = ref(new Set()); 
+                const unlockedFolderIds = ref(new Map()); 
 
                 const mode = ref('login');
                 const authForm = ref({ username: '', password: '', inviteCode: '' });
@@ -276,11 +358,16 @@
                 const rootFolders = computed(() => folders.value.filter(f => !f.parent_id));
                 const getSubFolders = (pid) => folders.value.filter(f => f.parent_id === pid);
                 const hasActiveNote = computed(() => currentNote.value && (currentNote.value.id || currentNote.value.isNew));
+                
+                const renderedContent = computed(() => {
+                    return currentNote.value && currentNote.value.content ? marked.parse(currentNote.value.content) : '';
+                });
 
                 onMounted(async () => {
                     const saved = localStorage.getItem('baynotes_user');
                     if(saved) { try { user.value = JSON.parse(saved); await loadData(); } catch(e) { logout(); } }
                     appLoading.value = false;
+                    window.addEventListener('resize', () => { if(window.innerWidth >= 768) sidebarOpen.value = true; });
                 });
 
                 const api = async (url, opts={}) => {
@@ -289,7 +376,7 @@
                     opts.headers = { ...opts.headers, 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
                     try {
                         const res = await fetch(url, opts);
-                        if(res.status === 401) { alert("Session Expired"); logout(); return { ok: false }; }
+                        if(res.status === 401) { logout(); return { ok: false }; }
                         return res;
                     } catch (e) { return { ok: false }; }
                 };
@@ -299,20 +386,16 @@
                     await fetchNotes();
                 };
 
-                // ★ 核心逻辑：获取笔记
                 const fetchNotes = async () => {
                     listLoading.value = true;
                     folderLocked.value = false;
                     notes.value = [];
 
-                    // 检查是否是点击了已加密且未解锁的文件夹
                     if(currentView.value === 'folder' && currentFolderId.value) {
                         const f = folders.value.find(x => x.id === currentFolderId.value);
                         if(f && f.is_encrypted && !unlockedFolderIds.value.has(f.id)) {
                             folderLocked.value = true;
                             listLoading.value = false;
-                            // 自动弹出解锁框
-                            folderModal.value = { show: true, mode: 'unlock', pwd: '', targetId: f.id };
                             return; 
                         }
                     }
@@ -321,13 +404,8 @@
                     if(currentView.value === 'folder') url += `&folderId=${currentFolderId.value}`;
                     if(currentView.value === 'search') url += `&q=${encodeURIComponent(searchQuery.value)}`;
                     
-                    // 如果是解锁状态，带上密码头 (这里简单处理：其实只需要前端记录解锁状态，密码可以不传给GET，但为了后端安全最好传)
-                    // 为了简化且满足"后端不返回"：我们在 Session 中存储的是"已解锁"，但为了请求数据，我们需要验证。
-                    // 修正逻辑：前端存的是 Password Hash 还是 Raw Password？为了方便，我们只在前端内存存 Password。
                     let headers = {};
                     if(currentView.value === 'folder' && unlockedFolderIds.value.has(currentFolderId.value)) {
-                         // 从内存Map中获取密码 (这里简单实现：我们把密码存在 unlockedFolders Map里，不仅仅是Set)
-                         // 重新定义 unlockedFolderIds 为 Map<Id, Password>
                          const pwd = unlockedFolderIds.value.get(currentFolderId.value);
                          if(pwd) headers['X-Folder-Pwd'] = pwd;
                     }
@@ -336,13 +414,10 @@
                     if(res.ok) {
                         notes.value = await res.json();
                     } else if(res.status === 403) {
-                         folderLocked.value = true; // 即使前端认为解锁了，后端如果拒绝也显示锁定
+                         folderLocked.value = true;
                     }
                     listLoading.value = false;
                 };
-
-                // 改造 unlockedFolders 数据结构
-                unlockedFolderIds.value = new Map(); // Key: ID, Value: Password
 
                 const isFolderUnlocked = (id) => unlockedFolderIds.value.has(id);
                 
@@ -359,7 +434,6 @@
 
                 const doSearch = () => { searchQuery.value=''; currentView.value='search'; currentNote.value=null; notes.value=[]; nextTick(()=>searchInputRef.value?.focus()); };
 
-                // Auth Logic
                 const handleAuth = async () => {
                     if(!authForm.value.username || !authForm.value.password) return alert("输入账号密码");
                     authLoading.value = true;
@@ -376,13 +450,14 @@
                 };
                 const logout = () => { localStorage.clear(); user.value=null; notes.value=[]; unlockedFolderIds.value = new Map(); };
 
-                // Note CRUD
                 const initNewNote = () => {
-                    if(currentView.value === 'folder' && folderLocked.value) return alert("请先解锁文件夹");
+                    if(currentView.value === 'folder' && folderLocked.value) return promptUnlock();
                     currentNote.value = { isNew: true, title: '', content: '', folderId: currentView.value==='folder' ? currentFolderId.value : null };
+                    isPreviewMode.value = false;
                     if(window.innerWidth < 768) sidebarOpen.value = false;
+                    nextTick(() => autoResizeTextarea());
                 };
-                const selectNote = (n) => { currentNote.value={...n}; };
+                const selectNote = (n) => { currentNote.value={...n}; isPreviewMode.value = false; nextTick(() => autoResizeTextarea()); };
                 
                 const deleteNote = async (n) => { 
                     if(confirm("移入回收站?")) { 
@@ -392,13 +467,17 @@
                     }
                 };
 
-                // Folder CRUD & Lock Logic
                 const createFolder = (pid) => { folderModal.value = { show:true, mode:'create', name:'', pwd:'', parentId: pid }; };
                 const deleteFolder = async (id) => { if(confirm("删除文件夹? 笔记将移至根目录。")) { await api(`/api/folders?id=${id}`, {method:'DELETE'}); loadData(); if(currentFolderId.value===id) setView('all'); }};
                 
                 const lockFolder = (id) => {
-                    unlockedFolderIds.value.delete(id); // 手动移除解锁状态
-                    if(currentFolderId.value === id) fetchNotes(); // 刷新视图导致重新锁定
+                    unlockedFolderIds.value.delete(id); 
+                    if(currentFolderId.value === id) fetchNotes(); 
+                };
+
+                const promptUnlock = () => {
+                    if(!currentFolderId.value) return;
+                    folderModal.value = { show: true, mode: 'unlock', pwd: '', targetId: currentFolderId.value };
                 };
 
                 const handleFolderSubmit = async () => {
@@ -408,12 +487,11 @@
                         await api('/api/folders', {method:'POST', body:JSON.stringify({name: m.name, parentId: m.parentId, password: m.pwd})});
                         loadData();
                     } else {
-                        // 解锁验证
                         if(!m.pwd) return;
                         const res = await api('/api/folders', {method:'POST', body:JSON.stringify({action:'verify', folderId: m.targetId, password: m.pwd})});
                         if(res.ok) {
-                            unlockedFolderIds.value.set(m.targetId, m.pwd); // 缓存密码
-                            if(currentFolderId.value === m.targetId) fetchNotes(); // 刷新列表
+                            unlockedFolderIds.value.set(m.targetId, m.pwd); 
+                            if(currentFolderId.value === m.targetId) fetchNotes(); 
                         } else {
                             alert("密码错误");
                             return;
@@ -422,9 +500,21 @@
                     folderModal.value.show = false;
                 };
 
-                // Editor Auto-save
                 let timer;
                 const debouncedSave = () => { saveStatus.value='同步中...'; clearTimeout(timer); timer=setTimeout(saveNote, 800); };
+                
+                const handleInput = (e) => {
+                    autoResizeTextarea();
+                    debouncedSave();
+                };
+
+                const autoResizeTextarea = () => {
+                    const el = textareaRef.value;
+                    if(!el) return;
+                    el.style.height = 'auto';
+                    el.style.height = el.scrollHeight + 'px';
+                };
+
                 const saveNote = async () => {
                     if(!currentNote.value || (!currentNote.value.title && !currentNote.value.content && currentNote.value.isNew)) return;
                     const res = await api('/api/notes', {method:'POST', body:JSON.stringify(currentNote.value)});
@@ -435,17 +525,15 @@
                     } else { saveStatus.value='失败'; }
                 };
 
-                // Editor Tools
                 const insertFormat = (b, a) => {
                     const t = document.getElementById('mainEditor'); if(!t) return;
                     const s = t.selectionStart, e = t.selectionEnd, v = currentNote.value.content||'';
                     currentNote.value.content = v.substring(0, s) + b + v.substring(s, e) + a + v.substring(e);
-                    nextTick(() => { t.focus(); t.selectionStart = s + b.length; t.selectionEnd = e + b.length; });
+                    nextTick(() => { t.focus(); t.selectionStart = s + b.length; t.selectionEnd = e + b.length; autoResizeTextarea(); });
                     debouncedSave();
                 };
                 const handleTab = (e) => { insertFormat('  ', ''); };
 
-                // Share
                 const openShare = (n) => { shareModal.value={show:true, noteId:n.id, days:7, result:''}; };
                 const doShare = async () => {
                     const res = await api('/api/notes', {method:'PATCH', body:JSON.stringify({...shareModal.value, noteId:currentNote.value.id})});
@@ -461,13 +549,21 @@
                     return f ? f.name : '文件夹';
                 };
                 const getFolderName = (id) => folders.value.find(x=>x.id===id)?.name || '...';
-                const formatDateShort = (ts) => new Date(ts*1000).toLocaleDateString(undefined, {month:'numeric', day:'numeric'});
+                
+                const relativeTime = (ts) => {
+                    const now = Date.now() / 1000;
+                    const diff = now - ts;
+                    if(diff < 60) return '刚刚';
+                    if(diff < 3600) return Math.floor(diff/60) + '分钟前';
+                    if(diff < 86400) return Math.floor(diff/3600) + '小时前';
+                    return new Date(ts*1000).toLocaleDateString();
+                };
 
                 return {
-                    appLoading, authLoading, listLoading, sidebarOpen, user, notes, rootFolders, getSubFolders, currentNote, hasActiveNote, currentView, searchQuery, searchInputRef, saveStatus, folderLocked,
+                    appLoading, authLoading, listLoading, sidebarOpen, user, notes, rootFolders, getSubFolders, currentNote, hasActiveNote, currentView, searchQuery, searchInputRef, saveStatus, folderLocked, isPreviewMode, renderedContent, textareaRef,
                     mode, authForm, folderModal, shareModal, 
-                    handleAuth, logout, initNewNote, selectNote, createFolder, deleteFolder, deleteNote, lockFolder, handleFolderSubmit, isFolderUnlocked,
-                    debouncedSave, insertFormat, handleTab, openShare, doShare, setView, doSearch, handleFolderClick, getViewTitle, getFolderName, formatDateShort, currentFolderId
+                    handleAuth, logout, initNewNote, selectNote, createFolder, deleteFolder, deleteNote, lockFolder, handleFolderSubmit, isFolderUnlocked, promptUnlock,
+                    debouncedSave, handleInput, saveNote, insertFormat, handleTab, openShare, doShare, setView, doSearch, handleFolderClick, getViewTitle, getFolderName, relativeTime, currentFolderId
                 };
             }
         }).mount('#app');
